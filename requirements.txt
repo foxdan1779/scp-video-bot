@@ -1,7 +1,6 @@
 streamlit
-beautifulsoup4
-requests
-edge-tts
 pillow
 moviepy
 numpy
+edge-tts
+opencv-python
