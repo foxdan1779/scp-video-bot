@@ -234,12 +234,11 @@ class VoiceGenerator:
             st.warning(f"Ошибка озвучки: {e}")
             return None
 
-# ==================== ВИДЕО-ГЕНЕРАТОР (ТОЛЬКО MOVIEPY) ====================
+# ==================== ВИДЕО-ГЕНЕРАТОР ====================
 class VideoGenerator:
     def create_video(self, frames: list, audio_path: str, script: dict) -> str:
-        """Создаёт видео используя moviepy (без OpenCV)"""
+        """Создаёт видео используя moviepy"""
         
-        # Создаём клипы
         clips = []
         
         for frame_data in frames:
@@ -249,24 +248,8 @@ class VideoGenerator:
                 clip = clip.resize(height=1920, width=1080)
                 clip = clip.set_duration(frame_data['duration'])
                 
-                # Добавляем эффект движения (zoom)
-                def make_frame(t):
-                    frame = clip.get_frame(t)
-                    # Простой эффект: чуть-чуть зума
-                    zoom = 1 + 0.01 * t
-                    h, w = frame.shape[:2]
-                    new_h, new_w = int(h * zoom), int(w * zoom)
-                    if new_h > h and new_w > w:
-                        # Обрезаем до оригинального размера
-                        y1 = (new_h - h) // 2
-                        x1 = (new_w - w) // 2
-                        # Используем resize из moviepy
-                        from moviepy.video.fx import resize
-                        return clip.resize(zoom).get_frame(t)
-                    return frame
-                
-                # Применяем эффект панорамирования (простой зум)
-                clip = clip.resize(lambda t: 1 + 0.01 * t)
+                # Добавляем эффект зума
+                clip = clip.resize(lambda t: 1 + 0.008 * t)
                 clips.append(clip)
                 
             except Exception as e:
@@ -292,13 +275,13 @@ class VideoGenerator:
             except Exception as e:
                 st.warning(f"Не удалось добавить аудио: {e}")
         
-        # Субтитры (простая версия)
+        # Субтитры
         try:
             subtitles = self._make_subtitles(script['scenes'])
             if subtitles:
                 final = CompositeVideoClip([final] + subtitles)
-        except:
-            pass
+        except Exception as e:
+            st.warning(f"Ошибка субтитров: {e}")
         
         # Имя файла
         scp_num = script.get('scp_number', '000')
@@ -450,7 +433,7 @@ def main():
         count = st.number_input("Количество видео:", min_value=1, max_value=8, value=1)
         st.markdown("---")
         st.info("💡 Используется встроенная база SCP (8 штук)")
-        st.success("✅ Без OpenCV! Использует только MoviePy")
+        st.success("✅ Исправлена ошибка ANTIALIAS!")
         st.markdown("---")
         
         if st.button("🗑️ Очистить временные файлы"):
