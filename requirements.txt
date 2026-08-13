@@ -3,4 +3,3 @@ pillow
 moviepy
 numpy
 edge-tts
-opencv-python
