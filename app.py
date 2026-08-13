@@ -13,11 +13,16 @@ from typing import Dict, List, Optional
 import tempfile
 import base64
 import random
-import cv2
-import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+import numpy as np
 
 # ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
+try:
+    from moviepy.editor import *
+except ImportError:
+    subprocess.check_call(['pip', 'install', 'moviepy'])
+    from moviepy.editor import *
+
 try:
     import edge_tts
 except ImportError:
@@ -156,6 +161,7 @@ class ImageGenerator:
         return frames
     
     def _create_style_image(self, path: str, seed: int, scp_data: dict):
+        # Создаём тёмный фон
         img = Image.new('RGB', (1080, 1920), color=(10, 10, 15))
         draw = ImageDraw.Draw(img)
         
@@ -228,15 +234,71 @@ class VoiceGenerator:
             st.warning(f"Ошибка озвучки: {e}")
             return None
 
-# ==================== ВИДЕО-ГЕНЕРАТОР (без FFmpeg) ====================
+# ==================== ВИДЕО-ГЕНЕРАТОР (ТОЛЬКО MOVIEPY) ====================
 class VideoGenerator:
     def create_video(self, frames: list, audio_path: str, script: dict) -> str:
-        """Создаёт видео используя OpenCV (без FFmpeg)"""
+        """Создаёт видео используя moviepy (без OpenCV)"""
         
-        # Настройки видео
-        fps = 24
-        width, height = 1080, 1920
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # Создаём клипы
+        clips = []
+        
+        for frame_data in frames:
+            try:
+                # Загружаем изображение
+                clip = ImageClip(frame_data['path'])
+                clip = clip.resize(height=1920, width=1080)
+                clip = clip.set_duration(frame_data['duration'])
+                
+                # Добавляем эффект движения (zoom)
+                def make_frame(t):
+                    frame = clip.get_frame(t)
+                    # Простой эффект: чуть-чуть зума
+                    zoom = 1 + 0.01 * t
+                    h, w = frame.shape[:2]
+                    new_h, new_w = int(h * zoom), int(w * zoom)
+                    if new_h > h and new_w > w:
+                        # Обрезаем до оригинального размера
+                        y1 = (new_h - h) // 2
+                        x1 = (new_w - w) // 2
+                        # Используем resize из moviepy
+                        from moviepy.video.fx import resize
+                        return clip.resize(zoom).get_frame(t)
+                    return frame
+                
+                # Применяем эффект панорамирования (простой зум)
+                clip = clip.resize(lambda t: 1 + 0.01 * t)
+                clips.append(clip)
+                
+            except Exception as e:
+                st.warning(f"Ошибка создания клипа: {e}")
+                # Создаём чёрный клип
+                clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=frame_data['duration'])
+                clips.append(clip)
+        
+        if not clips:
+            clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=10)
+            clips.append(clip)
+        
+        # Склеиваем
+        final = concatenate_videoclips(clips, method="compose")
+        
+        # Добавляем аудио
+        if audio_path and os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
+            try:
+                audio = AudioFileClip(audio_path)
+                if audio.duration > final.duration:
+                    audio = audio.subclip(0, final.duration)
+                final = final.set_audio(audio)
+            except Exception as e:
+                st.warning(f"Не удалось добавить аудио: {e}")
+        
+        # Субтитры (простая версия)
+        try:
+            subtitles = self._make_subtitles(script['scenes'])
+            if subtitles:
+                final = CompositeVideoClip([final] + subtitles)
+        except:
+            pass
         
         # Имя файла
         scp_num = script.get('scp_number', '000')
@@ -247,77 +309,57 @@ class VideoGenerator:
         filename = f"SCP-{scp_num}_{safe_name}_{timestamp}.mp4"
         output_path = os.path.join(CONFIG['output_dir'], filename)
         
-        # Создаём VideoWriter
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        
-        # Для каждой сцены
-        for frame_data in frames:
-            # Загружаем изображение
-            img_path = frame_data['path']
-            duration = frame_data['duration']
-            
-            try:
-                # Открываем как PIL, конвертируем в numpy для OpenCV
-                pil_img = Image.open(img_path)
-                pil_img = pil_img.resize((width, height))
-                img_array = np.array(pil_img)
-                # Конвертируем RGB -> BGR для OpenCV
-                img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-                
-                # Добавляем эффект "дрожания" для атмосферы
-                for t in range(int(duration * fps)):
-                    # Небольшое случайное смещение
-                    dx = random.randint(-3, 3)
-                    dy = random.randint(-3, 3)
-                    
-                    # Применяем аффинное преобразование (сдвиг)
-                    M = np.float32([[1, 0, dx], [0, 1, dy]])
-                    frame = cv2.warpAffine(img_array, M, (width, height))
-                    
-                    # Добавляем случайную яркость
-                    brightness = random.uniform(0.95, 1.05)
-                    frame = np.clip(frame * brightness, 0, 255).astype(np.uint8)
-                    
-                    out.write(frame)
-                    
-            except Exception as e:
-                st.warning(f"Ошибка обработки кадра: {e}")
-                # Создаём чёрный кадр
-                black_frame = np.zeros((height, width, 3), dtype=np.uint8)
-                for t in range(int(duration * fps)):
-                    out.write(black_frame)
-        
-        out.release()
-        
-        # Пробуем добавить аудио через moviepy (если есть ffmpeg)
-        if audio_path and os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
-            try:
-                from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip
-                video = VideoFileClip(output_path)
-                audio = AudioFileClip(audio_path)
-                if audio.duration > video.duration:
-                    audio = audio.subclip(0, video.duration)
-                video = video.set_audio(audio)
-                
-                # Сохраняем с аудио (перезаписываем)
-                temp_path = output_path.replace('.mp4', '_with_audio.mp4')
-                video.write_videofile(
-                    temp_path,
-                    fps=fps,
-                    codec='libx264',
-                    audio_codec='aac',
-                    threads=1,
-                    preset='ultrafast',
-                    verbose=False,
-                    logger=None
-                )
-                if os.path.exists(temp_path) and os.path.getsize(temp_path) > 1000:
-                    os.replace(temp_path, output_path)
-            except Exception as e:
-                st.warning(f"Не удалось добавить аудио: {e}")
-                # Видео без звука уже сохранено
+        # Экспорт
+        try:
+            final.write_videofile(
+                output_path,
+                fps=24,
+                codec='libx264',
+                audio_codec='aac',
+                threads=1,
+                preset='ultrafast',
+                verbose=False,
+                logger=None
+            )
+        except Exception as e:
+            st.error(f"Ошибка создания видео: {e}")
+            # Создаём текстовый файл с ошибкой
+            txt_path = output_path.replace('.mp4', '.txt')
+            with open(txt_path, 'w') as f:
+                f.write(f"Ошибка создания видео: {e}")
+            return txt_path
         
         return output_path
+    
+    def _make_subtitles(self, scenes):
+        """Создаёт субтитры для каждой сцены"""
+        txt_clips = []
+        current = 0
+        
+        for scene in scenes:
+            text = scene.get('voice_text', '')
+            duration = scene.get('duration', 6)
+            
+            try:
+                txt = TextClip(
+                    text,
+                    fontsize=50,
+                    color='white',
+                    stroke_color='black',
+                    stroke_width=3,
+                    font='Arial',
+                    method='caption',
+                    size=(900, None)
+                )
+                txt = txt.set_position(('center', 0.85), relative=True)
+                txt = txt.set_start(current)
+                txt = txt.set_duration(duration)
+                txt_clips.append(txt)
+            except:
+                pass
+            current += duration
+        
+        return txt_clips
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
@@ -408,7 +450,7 @@ def main():
         count = st.number_input("Количество видео:", min_value=1, max_value=8, value=1)
         st.markdown("---")
         st.info("💡 Используется встроенная база SCP (8 штук)")
-        st.success("✅ Без FFmpeg! Использует OpenCV для создания видео")
+        st.success("✅ Без OpenCV! Использует только MoviePy")
         st.markdown("---")
         
         if st.button("🗑️ Очистить временные файлы"):
