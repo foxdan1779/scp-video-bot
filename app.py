@@ -17,10 +17,9 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import numpy as np
 
 # ==================== ФИКС ДЛЯ ANTIALIAS ====================
-# MoviePy использует PIL.Image.ANTIALIAS, который удалён в Pillow 10+
-# Добавляем обратную совместимость
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.LANCZOS
+from PIL import Image as PILImage
+if not hasattr(PILImage, 'ANTIALIAS'):
+    PILImage.ANTIALIAS = PILImage.LANCZOS
     print("✅ Фикс ANTIALIAS применён!")
 
 # ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
@@ -42,23 +41,20 @@ SCP_DATABASE = [
         "number": "173",
         "name": "Скульптура",
         "author": "М. Роджерс",
-        "rating": 250,
         "appearance": "Бетонная статуя с лицом в виде красного иероглифа",
-        "text": "SCP-173 - это статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
+        "text": "SCP-173 - это статуя из бетона и арматуры."
     },
     {
         "number": "049",
         "name": "Чумной доктор",
         "author": "Габриэль",
-        "rating": 220,
         "appearance": "Гуманоид в средневековом костюме чумного доктора",
-        "text": "SCP-049 - гуманоид, который считает себя врачом. Он пытается 'лечить' людей."
+        "text": "SCP-049 - гуманоид, который считает себя врачом."
     },
     {
         "number": "096",
         "name": "Застенчивый парень",
         "author": "Доктор Дэн",
-        "rating": 300,
         "appearance": "Высокое, неестественно худое существо с белой кожей",
         "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."
     },
@@ -66,7 +62,6 @@ SCP_DATABASE = [
         "number": "106",
         "name": "Старый человек",
         "author": "Доктор Гирс",
-        "rating": 200,
         "appearance": "Гуманоид с гниющей кожей, в старом военном обмундировании",
         "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."
     },
@@ -74,23 +69,20 @@ SCP_DATABASE = [
         "number": "682",
         "name": "Трудный для уничтожения ящер",
         "author": "Доктор Гирс",
-        "rating": 280,
         "appearance": "Крупное рептилоидное существо с невероятной регенерацией",
-        "text": "SCP-682 - огромная рептилия, которая не умирает. Фонд пытался уничтожить её сотнями способов."
+        "text": "SCP-682 - огромная рептилия, которая не умирает."
     },
     {
         "number": "999",
         "name": "Щекочущий монстр",
         "author": "Доктор Кейн",
-        "rating": 180,
         "appearance": "Желейное существо оранжевого цвета, похожее на слизь",
-        "text": "SCP-999 - дружелюбное существо, которое щекочет людей и вызывает у них эйфорию."
+        "text": "SCP-999 - дружелюбное существо, которое щекочет людей."
     },
     {
         "number": "087",
         "name": "Лестница в подвал",
         "author": "Доктор У. Уилсон",
-        "rating": 210,
         "appearance": "Тёмная лестница, ведущая в подвал",
         "text": "SCP-087 - бесконечная лестница. На каждом уровне слышен плач ребёнка."
     },
@@ -98,7 +90,6 @@ SCP_DATABASE = [
         "number": "3000",
         "name": "Анаджвари",
         "author": "Доктор В. Д.",
-        "rating": 190,
         "appearance": "Огромный морской змей с раздвоенным хвостом",
         "text": "SCP-3000 - гигантский змей, который питается воспоминаниями людей."
     }
@@ -118,32 +109,26 @@ class ScriptGenerator:
     def generate_script(self, scp_data: dict) -> dict:
         scenes = [
             {
-                "frame_description": f"{scp_data['appearance']} в тёмной комнате",
                 "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}. Оно не должно было попасть ко мне.",
                 "duration": 7
             },
             {
-                "frame_description": "Крупный план существа",
-                "voice_text": f"Исследователи говорят, что {scp_data['text'][:80]}... Это слишком древнее. Слишком злое.",
+                "voice_text": f"Исследователи говорят, что {scp_data['text'][:60]}... Это слишком древнее. Слишком злое.",
                 "duration": 7
             },
             {
-                "frame_description": "Существо медленно поворачивается",
                 "voice_text": "Оно двигается. Не как человек. Слишком плавно. Слишком неестественно.",
                 "duration": 7
             },
             {
-                "frame_description": "Тёмный коридор, фигура вдалеке",
                 "voice_text": "Я слышал голоса. Они звали меня по имени. Но я был один.",
                 "duration": 7
             },
             {
-                "frame_description": "Существо смотрит прямо в камеру",
                 "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня. И улыбается.",
                 "duration": 7
             },
             {
-                "frame_description": "Темнота, только пара светящихся глаз",
                 "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.",
                 "duration": 7
             }
@@ -154,69 +139,72 @@ class ScriptGenerator:
             "scp_number": scp_data['number'],
             "scp_name": scp_data['name'],
             "author": scp_data['author'],
-            "scenes": scenes
+            "scenes": scenes,
+            "scp_data": scp_data
         }
 
-# ==================== ГЕНЕРАТОР КАРТИНОК ====================
+# ==================== ГЕНЕРАТОР КАРТИНОК (УПРОЩЁННЫЙ) ====================
 class ImageGenerator:
-    def generate_frames(self, script: dict, scp_data: dict) -> list:
+    def generate_frames(self, script: dict) -> list:
         frames = []
+        scp_data = script['scp_data']
+        
         for i, scene in enumerate(script['scenes']):
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
-            self._create_style_image(frame_path, i, scp_data)
-            frames.append({'path': frame_path, 'duration': scene.get('duration', 6)})
+            self._create_image(frame_path, i, scp_data)
+            frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
         return frames
     
-    def _create_style_image(self, path: str, seed: int, scp_data: dict):
-        img = Image.new('RGB', (1080, 1920), color=(10, 10, 15))
+    def _create_image(self, path: str, seed: int, scp_data: dict):
+        # Маленький размер для скорости
+        width, height = 720, 1280
+        img = Image.new('RGB', (width, height), color=(10, 10, 15))
         draw = ImageDraw.Draw(img)
         
         random.seed(seed + int(scp_data['number']) + 42)
         
-        # Текстуры
-        for _ in range(50):
-            x1 = random.randint(0, 1080)
-            y1 = random.randint(0, 1920)
-            x2 = random.randint(0, 1080)
-            y2 = random.randint(0, 1920)
-            draw.line([x1, y1, x2, y2], fill=(30, 30, 35), width=random.randint(1, 4))
+        # Простые линии
+        for _ in range(30):
+            x1 = random.randint(0, width)
+            y1 = random.randint(0, height)
+            x2 = random.randint(0, width)
+            y2 = random.randint(0, height)
+            draw.line([x1, y1, x2, y2], fill=(40, 40, 45), width=random.randint(1, 3))
         
-        # Центр
-        cx, cy = 540, 960
+        # Фигура
+        cx, cy = width//2, height//2
         scp_num = int(scp_data['number']) % 3
         
         if scp_num == 0:
-            # Человекоподобное
-            draw.rectangle([cx-120, cy-60, cx+120, cy+360], fill=(25, 25, 35), outline=(50, 50, 60))
-            draw.ellipse([cx-100, cy-180, cx+100, cy-40], fill=(30, 30, 40), outline=(50, 50, 60))
-            draw.ellipse([cx-50, cy-120, cx-10, cy-80], fill=(180, 20, 20))
-            draw.ellipse([cx+10, cy-120, cx+50, cy-80], fill=(180, 20, 20))
-            draw.line([cx-120, cy, cx-240, cy+100], fill=(30, 30, 40), width=12)
-            draw.line([cx+120, cy, cx+240, cy+100], fill=(30, 30, 40), width=12)
+            # Человек
+            draw.rectangle([cx-80, cy-40, cx+80, cy+240], fill=(25, 25, 35), outline=(60, 60, 70))
+            draw.ellipse([cx-70, cy-120, cx+70, cy-30], fill=(30, 30, 40), outline=(60, 60, 70))
+            draw.ellipse([cx-35, cy-80, cx-10, cy-55], fill=(180, 20, 20))
+            draw.ellipse([cx+10, cy-80, cx+35, cy-55], fill=(180, 20, 20))
             
         elif scp_num == 1:
-            # Монолит
-            draw.rectangle([cx-140, cy-300, cx+140, cy+300], fill=(20, 20, 30), outline=(50, 50, 60))
-            for _ in range(8):
-                rx = random.randint(cx-100, cx+100)
-                ry = random.randint(cy-200, cy+200)
-                draw.rectangle([rx-20, ry-30, rx+20, ry+30], fill=(100, 30, 30), outline=(150, 40, 40))
+            # Статуя
+            draw.rectangle([cx-90, cy-200, cx+90, cy+200], fill=(20, 20, 30), outline=(60, 60, 70))
+            for _ in range(6):
+                rx = random.randint(cx-70, cx+70)
+                ry = random.randint(cy-150, cy+150)
+                draw.rectangle([rx-15, ry-20, rx+15, ry+20], fill=(100, 30, 30), outline=(150, 40, 40))
                 
         else:
             # Абстрактное
-            for _ in range(15):
-                rx = random.randint(0, 1080)
-                ry = random.randint(0, 1920)
-                rw = random.randint(60, 200)
-                rh = random.randint(60, 200)
+            for _ in range(10):
+                rx = random.randint(0, width)
+                ry = random.randint(0, height)
+                rw = random.randint(40, 150)
+                rh = random.randint(40, 150)
                 draw.ellipse([rx-rw//2, ry-rh//2, rx+rw//2, ry+rh//2], 
                            fill=(random.randint(20, 40), random.randint(20, 40), random.randint(20, 40)))
         
         # Виньетка
-        mask = Image.new('L', (1080, 1920), 255)
+        mask = Image.new('L', (width, height), 255)
         mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse([100, 100, 980, 1820], fill=200)
-        mask_draw.ellipse([200, 200, 880, 1720], fill=255)
+        mask_draw.ellipse([80, 80, width-80, height-80], fill=220)
+        mask_draw.ellipse([160, 160, width-160, height-160], fill=255)
         enhancer = ImageEnhance.Brightness(img)
         img.paste(enhancer.enhance(0.6), mask=mask)
         
@@ -240,32 +228,26 @@ class VoiceGenerator:
             st.warning(f"Ошибка озвучки: {e}")
             return None
 
-# ==================== ВИДЕО-ГЕНЕРАТОР ====================
+# ==================== ВИДЕО-ГЕНЕРАТОР (УПРОЩЁННЫЙ) ====================
 class VideoGenerator:
     def create_video(self, frames: list, audio_path: str, script: dict) -> str:
-        """Создаёт видео используя moviepy"""
+        """Создаёт видео быстро и просто"""
         
         clips = []
         
         for frame_data in frames:
             try:
-                # Загружаем изображение
                 clip = ImageClip(frame_data['path'])
-                clip = clip.resize(height=1920, width=1080)
+                clip = clip.resize(height=1280, width=720)
                 clip = clip.set_duration(frame_data['duration'])
-                
-                # Добавляем эффект зума (простой)
-                clip = clip.resize(lambda t: 1 + 0.005 * t)
                 clips.append(clip)
-                
             except Exception as e:
-                st.warning(f"Ошибка создания клипа: {e}")
-                # Создаём чёрный клип
-                clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=frame_data['duration'])
+                st.warning(f"Ошибка клипа: {e}")
+                clip = ColorClip(size=(720, 1280), color=(0, 0, 0), duration=frame_data['duration'])
                 clips.append(clip)
         
         if not clips:
-            clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=10)
+            clip = ColorClip(size=(720, 1280), color=(0, 0, 0), duration=10)
             clips.append(clip)
         
         # Склеиваем
@@ -279,15 +261,7 @@ class VideoGenerator:
                     audio = audio.subclip(0, final.duration)
                 final = final.set_audio(audio)
             except Exception as e:
-                st.warning(f"Не удалось добавить аудио: {e}")
-        
-        # Субтитры
-        try:
-            subtitles = self._make_subtitles(script['scenes'])
-            if subtitles:
-                final = CompositeVideoClip([final] + subtitles)
-        except Exception as e:
-            st.warning(f"Ошибка субтитров: {e}")
+                st.warning(f"Аудио: {e}")
         
         # Имя файла
         scp_num = script.get('scp_number', '000')
@@ -298,7 +272,7 @@ class VideoGenerator:
         filename = f"SCP-{scp_num}_{safe_name}_{timestamp}.mp4"
         output_path = os.path.join(CONFIG['output_dir'], filename)
         
-        # Экспорт
+        # Экспорт с минимальными настройками
         try:
             final.write_videofile(
                 output_path,
@@ -307,48 +281,19 @@ class VideoGenerator:
                 audio_codec='aac',
                 threads=1,
                 preset='ultrafast',
+                bitrate='500k',
                 verbose=False,
                 logger=None
             )
         except Exception as e:
             st.error(f"Ошибка создания видео: {e}")
-            # Создаём текстовый файл с ошибкой
+            # Сохраняем как текстовый файл
             txt_path = output_path.replace('.mp4', '.txt')
             with open(txt_path, 'w') as f:
-                f.write(f"Ошибка создания видео: {e}")
+                f.write(f"Ошибка: {e}")
             return txt_path
         
         return output_path
-    
-    def _make_subtitles(self, scenes):
-        """Создаёт субтитры для каждой сцены"""
-        txt_clips = []
-        current = 0
-        
-        for scene in scenes:
-            text = scene.get('voice_text', '')
-            duration = scene.get('duration', 6)
-            
-            try:
-                txt = TextClip(
-                    text,
-                    fontsize=50,
-                    color='white',
-                    stroke_color='black',
-                    stroke_width=3,
-                    font='Arial',
-                    method='caption',
-                    size=(900, None)
-                )
-                txt = txt.set_position(('center', 0.85), relative=True)
-                txt = txt.set_start(current)
-                txt = txt.set_duration(duration)
-                txt_clips.append(txt)
-            except:
-                pass
-            current += duration
-        
-        return txt_clips
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
@@ -373,42 +318,36 @@ class SCPBot:
         
         for idx, scp in enumerate(scp_list, 1):
             self._add_status(f"\n📚 [{idx}/{len(scp_list)}] SCP-{scp['number']}: {scp['name']}")
-            self._add_status(f"   👤 Автор: {scp['author']}")
             
             try:
-                self._add_status("✍️ Генерация сценария...")
+                self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
-                self._add_status(f"   ✅ Сценарий: {len(script['scenes'])} сцен")
                 
-                self._add_status("🎨 Генерация кадров...")
-                frames = self.image_gen.generate_frames(script, scp)
-                self._add_status(f"   ✅ Сгенерировано {len(frames)} кадров")
+                self._add_status("🎨 Кадры...")
+                frames = self.image_gen.generate_frames(script)
+                self._add_status(f"   ✅ {len(frames)} кадров")
                 
-                self._add_status("🎤 Генерация озвучки...")
+                self._add_status("🎤 Озвучка...")
                 audio = self.voice_gen.generate_voice(script)
                 if audio:
-                    self._add_status("   ✅ Озвучка готова")
+                    self._add_status("   ✅ Готово")
                 else:
-                    self._add_status("   ⚠️ Озвучка не создана")
+                    self._add_status("   ⚠️ Без звука")
                 
-                self._add_status("🎬 Создание видео...")
+                self._add_status("🎬 Видео...")
                 video_path = self.video_gen.create_video(frames, audio, script)
                 
                 if os.path.exists(video_path) and os.path.getsize(video_path) > 1000:
                     size_mb = os.path.getsize(video_path) / 1024 / 1024
-                    self._add_status(f"✅ ВИДЕО ГОТОВО!")
-                    self._add_status(f"📁 {os.path.basename(video_path)}")
-                    self._add_status(f"📏 {size_mb:.1f} MB")
+                    self._add_status(f"✅ ГОТОВО! {size_mb:.1f} MB")
                     self.videos_created.append(video_path)
                 else:
-                    self._add_status("⚠️ Видео не создано")
+                    self._add_status("⚠️ Ошибка")
                 
                 self._cleanup()
                 
             except Exception as e:
                 self._add_status(f"❌ Ошибка: {e}")
-                import traceback
-                self._add_status(traceback.format_exc())
         
         return self.videos_created
     
@@ -438,8 +377,8 @@ def main():
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=8, value=1)
         st.markdown("---")
-        st.info("💡 Используется встроенная база SCP (8 штук)")
-        st.success("✅ Добавлен фикс для ANTIALIAS!")
+        st.info("💡 Размер видео: 720x1280")
+        st.info("⏱️ Обычно 1-2 минуты на видео")
         st.markdown("---")
         
         if st.button("🗑️ Очистить временные файлы"):
