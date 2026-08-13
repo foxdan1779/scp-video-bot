@@ -1,5 +1,5 @@
 streamlit
-pillow
-moviepy
+pillow>=10.0.0
+moviepy>=1.0.3
 numpy
 edge-tts
