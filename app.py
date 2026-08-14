@@ -5,28 +5,47 @@ import json
 import time
 import shutil
 import asyncio
-import subprocess
 import requests
+import base64
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 import random
-import numpy as np  # <--- ЭТО ВАЖНО!
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import io
+
+# ==================== ФИКС ДЛЯ ANTIALIAS ====================
+# В новых версиях Pillow (10+) ANTIALIAS удалён, но MoviePy его использует
+# Восстанавливаем совместимость
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
+    print("✅ Фикс ANTIALIAS применён")
 
 # ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
 try:
     from moviepy.editor import *
 except ImportError:
+    import subprocess
     subprocess.check_call(['pip', 'install', 'moviepy'])
     from moviepy.editor import *
 
 try:
     import edge_tts
 except ImportError:
+    import subprocess
     subprocess.check_call(['pip', 'install', 'edge-tts'])
     import edge_tts
+
+# ==================== КОНФИГУРАЦИЯ ====================
+CONFIG = {
+    'output_dir': './videos',
+    'temp_dir': './temp',
+    'hf_token': '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',  # ВАШ ТОКЕН
+    'hf_model': 'stabilityai/stable-diffusion-2-1'        # Модель
+}
+
+for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
+    Path(folder).mkdir(parents=True, exist_ok=True)
 
 # ==================== ВСТРОЕННАЯ БАЗА SCP ====================
 SCP_DATABASE = [
@@ -34,7 +53,7 @@ SCP_DATABASE = [
         "number": "173",
         "name": "Скульптура",
         "author": "М. Роджерс",
-        "text": "SCP-173 - это статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
+        "text": "SCP-173 - статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
     },
     {
         "number": "049",
@@ -80,184 +99,16 @@ SCP_DATABASE = [
     }
 ]
 
-# ==================== КОНФИГУРАЦИЯ ====================
-CONFIG = {
-    'output_dir': './videos',
-    'temp_dir': './temp'
-}
-
-for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
-    Path(folder).mkdir(parents=True, exist_ok=True)
-
-# ==================== ГЕНЕРАТОР РИСУНКОВ В СТИЛЕ "ДОКТОР ВОЙД" ====================
-class VoidSketchGenerator:
-    """Генерирует рисунки в стиле Доктор Войд (скетч, мрачный, экспрессионистский)"""
-    
-    @staticmethod
-    def create_sketch(width: int, height: int, scp_data: dict, scene_index: int, total_scenes: int) -> Image.Image:
-        """Создаёт рисунок в стиле Доктор Войд"""
-        
-        # 1. Бумажный фон
-        img = Image.new('RGB', (width, height), color=(240, 235, 225))
-        draw = ImageDraw.Draw(img)
-        
-        # 2. Текстура бумаги
-        random.seed(scene_index + int(scp_data['number']) * 100)
-        for _ in range(3000):
-            x = random.randint(0, width-1)
-            y = random.randint(0, height-1)
-            brightness = random.randint(210, 240)
-            draw.point((x, y), fill=(brightness, brightness-5, brightness-10))
-        
-        # 3. Виньетка
-        mask = Image.new('L', (width, height), 255)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse([100, 100, width-100, height-100], fill=200)
-        mask_draw.ellipse([200, 200, width-200, height-200], fill=255)
-        enhancer = ImageEnhance.Brightness(img)
-        img.paste(enhancer.enhance(0.7), mask=mask)
-        
-        # 4. Рисуем персонажа
-        draw = ImageDraw.Draw(img)
-        cx, cy = width//2, height//2 - 50
-        scp_type = int(scp_data['number']) % 5
-        
-        # Стиль рисования (прерывистые линии, как карандаш)
-        def sketch_line(x1, y1, x2, y2, color, width_val):
-            steps = max(10, int(((x2-x1)**2 + (y2-y1)**2)**0.5) // 4)
-            for i in range(steps):
-                t = i / steps
-                x = x1 + (x2 - x1) * t + random.randint(-2, 2)
-                y = y1 + (y2 - y1) * t + random.randint(-2, 2)
-                if random.random() > 0.2:
-                    draw.ellipse([x-width_val//2, y-width_val//2, x+width_val//2, y+width_val//2], 
-                                fill=color, outline=color)
-        
-        def sketch_ellipse(x1, y1, x2, y2, color, width_val):
-            steps = 50
-            for i in range(steps):
-                angle = 2 * 3.14159 * i / steps
-                cx_el = (x1 + x2) / 2 + random.randint(-3, 3)
-                cy_el = (y1 + y2) / 2 + random.randint(-3, 3)
-                rx = (x2 - x1) / 2 + random.randint(-2, 2)
-                ry = (y2 - y1) / 2 + random.randint(-2, 2)
-                x = cx_el + rx * np.cos(angle)
-                y = cy_el + ry * np.sin(angle)
-                if random.random() > 0.2:
-                    draw.ellipse([x-width_val//2, y-width_val//2, x+width_val//2, y+width_val//2], 
-                                fill=color, outline=color)
-        
-        pencil_dark = (25, 25, 30)
-        pencil_medium = (55, 55, 60)
-        pencil_red = (140, 30, 30)
-        
-        # В зависимости от SCP
-        if scp_type == 0:
-            # SCP-173 - Статуя
-            offset_x = random.randint(-10, 10)
-            offset_y = random.randint(-5, 5)
-            # Тело
-            sketch_line(cx-80+offset_x, cy-40+offset_y, cx-80+offset_x, cy+230+offset_y, pencil_dark, 4)
-            sketch_line(cx-80+offset_x, cy+230+offset_y, cx+80+offset_x, cy+230+offset_y, pencil_dark, 4)
-            sketch_line(cx+80+offset_x, cy+230+offset_y, cx+80+offset_x, cy-40+offset_y, pencil_dark, 4)
-            sketch_line(cx+80+offset_x, cy-40+offset_y, cx-80+offset_x, cy-40+offset_y, pencil_dark, 4)
-            # Голова
-            sketch_ellipse(cx-70+offset_x, cy-130+offset_y, cx+70+offset_x, cy-20+offset_y, pencil_dark, 4)
-            # Лицо
-            sketch_line(cx-35+offset_x, cy-90+offset_y, cx+35+offset_x, cy-90+offset_y, pencil_red, 3)
-            sketch_line(cx-35+offset_x, cy-70+offset_y, cx+35+offset_x, cy-70+offset_y, pencil_red, 3)
-            sketch_line(cx+offset_x, cy-100+offset_y, cx+offset_x, cy-60+offset_y, pencil_red, 3)
-            
-        elif scp_type == 1:
-            # SCP-049 - Чумной доктор
-            # Плащ
-            sketch_line(cx-100, cy-30, cx-130, cy+250, pencil_dark, 4)
-            sketch_line(cx-130, cy+250, cx+130, cy+250, pencil_dark, 4)
-            sketch_line(cx+130, cy+250, cx+100, cy-30, pencil_dark, 4)
-            # Голова
-            sketch_ellipse(cx-60, cy-140, cx+60, cy-10, pencil_dark, 4)
-            # Клюв
-            sketch_line(cx, cy-120, cx+70, cy-80, pencil_dark, 3)
-            sketch_line(cx+70, cy-80, cx, cy-40, pencil_dark, 3)
-            # Глаза
-            sketch_ellipse(cx-25, cy-100, cx-5, cy-85, pencil_red, 2)
-            sketch_ellipse(cx+5, cy-100, cx+25, cy-85, pencil_red, 2)
-            
-        elif scp_type == 2:
-            # SCP-096 - Застенчивый парень
-            # Тело
-            sketch_line(cx-50, cy-30, cx-45, cy+270, pencil_dark, 3)
-            sketch_line(cx-45, cy+270, cx+45, cy+270, pencil_dark, 3)
-            sketch_line(cx+45, cy+270, cx+50, cy-30, pencil_dark, 3)
-            # Челюсти
-            sketch_ellipse(cx-90, cy-100, cx+90, cy+10, pencil_dark, 4)
-            # Глаза
-            sketch_ellipse(cx-20, cy-60, cx-5, cy-45, pencil_medium, 2)
-            sketch_ellipse(cx+5, cy-60, cx+20, cy-45, pencil_medium, 2)
-            # Руки
-            sketch_line(cx-48, cy+40, cx-120, cy+180, pencil_dark, 3)
-            sketch_line(cx+48, cy+40, cx+120, cy+180, pencil_dark, 3)
-            
-        elif scp_type == 3:
-            # SCP-106 - Старый человек
-            # Тело
-            sketch_line(cx-75, cy-20, cx-70, cy+240, pencil_dark, 4)
-            sketch_line(cx-70, cy+240, cx+70, cy+240, pencil_dark, 4)
-            sketch_line(cx+70, cy+240, cx+75, cy-20, pencil_dark, 4)
-            # Голова
-            sketch_ellipse(cx-60, cy-110, cx+60, cy-5, pencil_dark, 4)
-            # Глаза
-            sketch_ellipse(cx-25, cy-80, cx-10, cy-65, pencil_medium, 2)
-            sketch_ellipse(cx+10, cy-80, cx+25, cy-65, pencil_medium, 2)
-            
-        else:
-            # SCP-682 - Ящер
-            # Тело
-            sketch_line(cx-120, cy+100, cx-60, cy-50, pencil_dark, 5)
-            sketch_line(cx-60, cy-50, cx+60, cy-50, pencil_dark, 5)
-            sketch_line(cx+60, cy-50, cx+120, cy+100, pencil_dark, 5)
-            # Голова
-            sketch_ellipse(cx-80, cy-130, cx+80, cy-30, pencil_dark, 4)
-            # Глаза
-            sketch_ellipse(cx-30, cy-100, cx-10, cy-80, pencil_red, 3)
-            sketch_ellipse(cx+10, cy-100, cx+30, cy-80, pencil_red, 3)
-            # Пасть
-            sketch_line(cx-50, cy-40, cx+50, cy-40, pencil_red, 4)
-        
-        # 5. Штриховка
-        for _ in range(150):
-            x = random.randint(100, width-100)
-            y = random.randint(100, height-100)
-            length = random.randint(5, 15)
-            angle = random.randint(0, 360)
-            dx = length * np.cos(angle)
-            dy = length * np.sin(angle)
-            draw.line([x, y, x+dx, y+dy], fill=(60, 60, 65), width=1)
-        
-        # 6. Пятна
-        for _ in range(30):
-            x = random.randint(0, width-1)
-            y = random.randint(0, height-1)
-            size = random.randint(2, 8)
-            brightness = random.randint(180, 210)
-            draw.ellipse([x-size, y-size, x+size, y+size], 
-                        fill=(brightness, brightness-5, brightness-10))
-        
-        # 7. Лёгкое размытие
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-        
-        return img
-
 # ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
 class ScriptGenerator:
     def generate_script(self, scp_data: dict) -> dict:
         scenes = [
-            {"voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.", "duration": 7},
-            {"voice_text": f"{scp_data['text']}", "duration": 8},
-            {"voice_text": "Оно двигается. Не как человек. Слишком плавно.", "duration": 7},
-            {"voice_text": "Я слышал голоса. Они звали меня по имени.", "duration": 7},
-            {"voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
-            {"voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
+            {"prompt": f"{scp_data['name']}, dark horror atmosphere, sketch style, гротеск, мрачный", "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.", "duration": 7},
+            {"prompt": f"{scp_data['name']}, close up, detailed, horror sketch, угольный рисунок", "voice_text": f"{scp_data['text']}", "duration": 8},
+            {"prompt": f"{scp_data['name']}, movement, dynamic, scary, sketch", "voice_text": "Оно двигается. Не как человек. Слишком плавно.", "duration": 7},
+            {"prompt": f"{scp_data['name']}, in the dark, shadows, horror art, гротеск", "voice_text": "Я слышал голоса. Они звали меня по имени.", "duration": 7},
+            {"prompt": f"{scp_data['name']}, looking at viewer, scary eyes, sketch", "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
+            {"prompt": f"{scp_data['name']}, behind the viewer, horror, dark, скетч", "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
         ]
         
         return {
@@ -269,16 +120,64 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
+# ==================== ГЕНЕРАТОР ИЗОБРАЖЕНИЙ (Hugging Face API) ====================
+class ImageGeneratorHF:
+    def __init__(self, token: str, model: str):
+        self.token = token
+        self.model = model
+        self.api_url = f"https://api-inference.huggingface.co/models/{model}"
+        self.headers = {"Authorization": f"Bearer {token}"}
+    
+    def generate_image(self, prompt: str, negative_prompt: str = "") -> Image.Image:
+        """Генерирует изображение через Hugging Face API"""
+        
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "negative_prompt": negative_prompt,
+                "num_inference_steps": 25,
+                "guidance_scale": 7.5,
+                "width": 512,
+                "height": 768
+            }
+        }
+        
+        try:
+            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=60)
+            
+            if response.status_code == 200:
+                img = Image.open(io.BytesIO(response.content))
+                return img
+            else:
+                st.error(f"Ошибка API: {response.status_code} - {response.text}")
+                return self._fallback_image()
+                
+        except Exception as e:
+            st.error(f"Ошибка генерации: {e}")
+            return self._fallback_image()
+    
+    def _fallback_image(self) -> Image.Image:
+        img = Image.new('RGB', (512, 768), color=(20, 20, 30))
+        return img
+
 # ==================== ГЕНЕРАТОР КАДРОВ ====================
 class ImageGenerator:
+    def __init__(self, hf_api: ImageGeneratorHF):
+        self.hf_api = hf_api
+    
     def generate_frames(self, script: dict) -> list:
         frames = []
-        scp_data = script['scp_data']
         total = len(script['scenes'])
         
         for i, scene in enumerate(script['scenes']):
+            st.text(f"   🎨 Генерация кадра {i+1}/{total}...")
+            
+            prompt = f"{scene['prompt']}, стиль Доктор Войд, гротескный скетч, угольный рисунок, экспрессионизм, мрачный хоррор, черно-белое с красными акцентами"
+            negative_prompt = "фотореализм, фотография, глянец, мультяшность, аниме, цветное, яркое, реализм"
+            
+            img = self.hf_api.generate_image(prompt, negative_prompt)
+            
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
-            img = VoidSketchGenerator.create_sketch(720, 1280, scp_data, i, total)
             img.save(frame_path)
             frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
         
@@ -315,11 +214,11 @@ class VideoGenerator:
                 clips.append(clip)
             except Exception as e:
                 st.warning(f"Ошибка клипа: {e}")
-                clip = ColorClip(size=(720, 1280), color=(240, 235, 225), duration=frame_data['duration'])
+                clip = ColorClip(size=(720, 1280), color=(20, 20, 30), duration=frame_data['duration'])
                 clips.append(clip)
         
         if not clips:
-            clip = ColorClip(size=(720, 1280), color=(240, 235, 225), duration=10)
+            clip = ColorClip(size=(720, 1280), color=(20, 20, 30), duration=10)
             clips.append(clip)
         
         final = concatenate_videoclips(clips, method="compose")
@@ -364,9 +263,9 @@ class VideoGenerator:
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
-    def __init__(self):
+    def __init__(self, hf_api: ImageGeneratorHF):
         self.script_gen = ScriptGenerator()
-        self.image_gen = ImageGenerator()
+        self.image_gen = ImageGenerator(hf_api)
         self.voice_gen = VoiceGenerator()
         self.video_gen = VideoGenerator()
         self.videos_created = []
@@ -390,7 +289,7 @@ class SCPBot:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
                 
-                self._add_status("✏️ Рисование кадров...")
+                self._add_status("🎨 Генерация через Hugging Face API...")
                 frames = self.image_gen.generate_frames(script)
                 self._add_status(f"   ✅ {len(frames)} кадров")
                 
@@ -433,21 +332,23 @@ class SCPBot:
 # ==================== STREAMLIT UI ====================
 def main():
     st.set_page_config(
-        page_title="SCP Sketch Video Bot",
-        page_icon="✏️",
+        page_title="SCP Video Bot (Hugging Face)",
+        page_icon="🤗",
         layout="wide"
     )
     
-    st.title("✏️ SCP Sketch Video Generator")
-    st.markdown("Создаёт видео в стиле рисованного скетча")
+    st.title("🤗 SCP Video Bot + Hugging Face API")
+    st.markdown("Создаёт видео с рисунками через нейросеть (без установки!)")
     st.markdown("---")
+    
+    hf_api = ImageGeneratorHF(CONFIG['hf_token'], CONFIG['hf_model'])
     
     with st.sidebar:
         st.header("⚙️ Настройки")
-        count = st.number_input("Количество видео:", min_value=1, max_value=8, value=1)
+        count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("✏️ Стиль: рисованный скетч")
-        st.info("⏱️ 1-2 минуты на видео")
+        st.info("🤗 Модель: " + CONFIG['hf_model'])
+        st.info("⏱️ ~10-20 секунд на кадр")
         st.markdown("---")
         
         if st.button("🗑️ Очистить временные файлы"):
@@ -461,9 +362,9 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        if st.button("✏️ Сгенерировать видео", type="primary", use_container_width=True):
-            with st.spinner("Рисование видео..."):
-                bot = SCPBot()
+        if st.button("🤗 Сгенерировать видео", type="primary", use_container_width=True):
+            with st.spinner("Генерация видео..."):
+                bot = SCPBot(hf_api)
                 videos = bot.run(count=count)
                 
                 st.subheader("📊 Лог работы")
