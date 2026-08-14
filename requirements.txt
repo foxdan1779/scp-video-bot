@@ -5,3 +5,6 @@ numpy
 edge-tts
 requests
 beautifulsoup4
+transformers
+torch
+torchvision
