@@ -1,5 +1,6 @@
 streamlit
-pillow>=10.0.0
-moviepy>=1.0.3
+pillow
+moviepy
 numpy
 edge-tts
+requests
