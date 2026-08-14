@@ -4,4 +4,4 @@ moviepy
 numpy
 edge-tts
 requests
-googlesearch-python
+beautifulsoup4
