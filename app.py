@@ -15,11 +15,8 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import io
 
 # ==================== ФИКС ДЛЯ ANTIALIAS ====================
-# В новых версиях Pillow (10+) ANTIALIAS удалён, но MoviePy его использует
-# Восстанавливаем совместимость
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
-    print("✅ Фикс ANTIALIAS применён")
 
 # ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
 try:
@@ -40,8 +37,8 @@ except ImportError:
 CONFIG = {
     'output_dir': './videos',
     'temp_dir': './temp',
-    'hf_token': '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',  # ВАШ ТОКЕН
-    'hf_model': 'stabilityai/stable-diffusion-2-1'        # Модель
+    'replicate_token': 'r8_ваш_токен',  # 👈 ВСТАВЬТЕ СВОЙ ТОКЕН
+    'replicate_model': 'stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf'
 }
 
 for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
@@ -49,54 +46,14 @@ for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/
 
 # ==================== ВСТРОЕННАЯ БАЗА SCP ====================
 SCP_DATABASE = [
-    {
-        "number": "173",
-        "name": "Скульптура",
-        "author": "М. Роджерс",
-        "text": "SCP-173 - статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
-    },
-    {
-        "number": "049",
-        "name": "Чумной доктор",
-        "author": "Габриэль",
-        "text": "SCP-049 - гуманоид, который считает себя врачом."
-    },
-    {
-        "number": "096",
-        "name": "Застенчивый парень",
-        "author": "Доктор Дэн",
-        "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."
-    },
-    {
-        "number": "106",
-        "name": "Старый человек",
-        "author": "Доктор Гирс",
-        "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."
-    },
-    {
-        "number": "682",
-        "name": "Трудный для уничтожения ящер",
-        "author": "Доктор Гирс",
-        "text": "SCP-682 - огромная рептилия, которая не умирает."
-    },
-    {
-        "number": "999",
-        "name": "Щекочущий монстр",
-        "author": "Доктор Кейн",
-        "text": "SCP-999 - дружелюбное существо, которое щекочет людей."
-    },
-    {
-        "number": "087",
-        "name": "Лестница в подвал",
-        "author": "Доктор У. Уилсон",
-        "text": "SCP-087 - бесконечная лестница. На каждом уровне слышен плач ребёнка."
-    },
-    {
-        "number": "3000",
-        "name": "Анаджвари",
-        "author": "Доктор В. Д.",
-        "text": "SCP-3000 - гигантский змей, который питается воспоминаниями."
-    }
+    {"number": "173", "name": "Скульптура", "author": "М. Роджерс", "text": "SCP-173 - статуя из бетона и арматуры."},
+    {"number": "049", "name": "Чумной доктор", "author": "Габриэль", "text": "SCP-049 - гуманоид, который считает себя врачом."},
+    {"number": "096", "name": "Застенчивый парень", "author": "Доктор Дэн", "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."},
+    {"number": "106", "name": "Старый человек", "author": "Доктор Гирс", "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."},
+    {"number": "682", "name": "Трудный для уничтожения ящер", "author": "Доктор Гирс", "text": "SCP-682 - огромная рептилия, которая не умирает."},
+    {"number": "999", "name": "Щекочущий монстр", "author": "Доктор Кейн", "text": "SCP-999 - дружелюбное существо, которое щекочет людей."},
+    {"number": "087", "name": "Лестница в подвал", "author": "Доктор У. Уилсон", "text": "SCP-087 - бесконечная лестница."},
+    {"number": "3000", "name": "Анаджвари", "author": "Доктор В. Д.", "text": "SCP-3000 - гигантский змей."}
 ]
 
 # ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
@@ -110,7 +67,6 @@ class ScriptGenerator:
             {"prompt": f"{scp_data['name']}, looking at viewer, scary eyes, sketch", "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
             {"prompt": f"{scp_data['name']}, behind the viewer, horror, dark, скетч", "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
         ]
-        
         return {
             "title": f"SCP-{scp_data['number']} | {scp_data['name']}",
             "scp_number": scp_data['number'],
@@ -120,20 +76,25 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
-# ==================== ГЕНЕРАТОР ИЗОБРАЖЕНИЙ (Hugging Face API) ====================
-class ImageGeneratorHF:
+# ==================== REPLICATE API ====================
+class ReplicateGenerator:
     def __init__(self, token: str, model: str):
         self.token = token
         self.model = model
-        self.api_url = f"https://api-inference.huggingface.co/models/{model}"
-        self.headers = {"Authorization": f"Bearer {token}"}
+        self.api_url = "https://api.replicate.com/v1/predictions"
+        self.headers = {
+            "Authorization": f"Token {token}",
+            "Content-Type": "application/json"
+        }
     
     def generate_image(self, prompt: str, negative_prompt: str = "") -> Image.Image:
-        """Генерирует изображение через Hugging Face API"""
+        """Генерирует изображение через Replicate API"""
         
+        # Формируем запрос
         payload = {
-            "inputs": prompt,
-            "parameters": {
+            "version": self.model,
+            "input": {
+                "prompt": prompt,
                 "negative_prompt": negative_prompt,
                 "num_inference_steps": 25,
                 "guidance_scale": 7.5,
@@ -143,17 +104,42 @@ class ImageGeneratorHF:
         }
         
         try:
-            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=60)
-            
-            if response.status_code == 200:
-                img = Image.open(io.BytesIO(response.content))
-                return img
-            else:
-                st.error(f"Ошибка API: {response.status_code} - {response.text}")
+            # 1. Запускаем предсказание
+            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=30)
+            if response.status_code != 201:
+                st.error(f"Ошибка запуска: {response.status_code} - {response.text}")
                 return self._fallback_image()
-                
+            
+            prediction = response.json()
+            prediction_id = prediction['id']
+            
+            # 2. Ждём завершения (polling)
+            status_url = f"{self.api_url}/{prediction_id}"
+            for _ in range(30):  # ~30 секунд
+                time.sleep(2)
+                status_response = requests.get(status_url, headers=self.headers)
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    if status_data['status'] == 'succeeded':
+                        # Получаем URL изображения
+                        image_url = status_data['output'][0]
+                        img_response = requests.get(image_url)
+                        if img_response.status_code == 200:
+                            img = Image.open(io.BytesIO(img_response.content))
+                            return img
+                        else:
+                            break
+                    elif status_data['status'] == 'failed':
+                        st.error(f"Ошибка генерации: {status_data.get('error', 'неизвестная ошибка')}")
+                        break
+                else:
+                    break
+            
+            # Если не дождались или ошибка
+            return self._fallback_image()
+            
         except Exception as e:
-            st.error(f"Ошибка генерации: {e}")
+            st.error(f"Ошибка API: {e}")
             return self._fallback_image()
     
     def _fallback_image(self) -> Image.Image:
@@ -162,8 +148,8 @@ class ImageGeneratorHF:
 
 # ==================== ГЕНЕРАТОР КАДРОВ ====================
 class ImageGenerator:
-    def __init__(self, hf_api: ImageGeneratorHF):
-        self.hf_api = hf_api
+    def __init__(self, api: ReplicateGenerator):
+        self.api = api
     
     def generate_frames(self, script: dict) -> list:
         frames = []
@@ -171,12 +157,9 @@ class ImageGenerator:
         
         for i, scene in enumerate(script['scenes']):
             st.text(f"   🎨 Генерация кадра {i+1}/{total}...")
-            
             prompt = f"{scene['prompt']}, стиль Доктор Войд, гротескный скетч, угольный рисунок, экспрессионизм, мрачный хоррор, черно-белое с красными акцентами"
             negative_prompt = "фотореализм, фотография, глянец, мультяшность, аниме, цветное, яркое, реализм"
-            
-            img = self.hf_api.generate_image(prompt, negative_prompt)
-            
+            img = self.api.generate_image(prompt, negative_prompt)
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
             img.save(frame_path)
             frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
@@ -205,7 +188,6 @@ class VoiceGenerator:
 class VideoGenerator:
     def create_video(self, frames: list, audio_path: str, script: dict) -> str:
         clips = []
-        
         for frame_data in frames:
             try:
                 clip = ImageClip(frame_data['path'])
@@ -222,7 +204,6 @@ class VideoGenerator:
             clips.append(clip)
         
         final = concatenate_videoclips(clips, method="compose")
-        
         if audio_path and os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
             try:
                 audio = AudioFileClip(audio_path)
@@ -263,9 +244,9 @@ class VideoGenerator:
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
-    def __init__(self, hf_api: ImageGeneratorHF):
+    def __init__(self, api: ReplicateGenerator):
         self.script_gen = ScriptGenerator()
-        self.image_gen = ImageGenerator(hf_api)
+        self.image_gen = ImageGenerator(api)
         self.voice_gen = VoiceGenerator()
         self.video_gen = VideoGenerator()
         self.videos_created = []
@@ -273,50 +254,38 @@ class SCPBot:
     
     def run(self, count=1):
         self.status_messages = []
-        
         scp_list = SCP_DATABASE[:count]
-        
         if not scp_list:
             self._add_status("❌ База SCP пуста")
             return []
-        
         self._add_status(f"📚 Найдено SCP: {len(scp_list)}")
-        
         for idx, scp in enumerate(scp_list, 1):
             self._add_status(f"\n📚 [{idx}/{len(scp_list)}] SCP-{scp['number']}: {scp['name']}")
-            
             try:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
-                
-                self._add_status("🎨 Генерация через Hugging Face API...")
+                self._add_status("🎨 Генерация через Replicate API...")
                 frames = self.image_gen.generate_frames(script)
                 self._add_status(f"   ✅ {len(frames)} кадров")
-                
                 self._add_status("🎤 Озвучка...")
                 audio = self.voice_gen.generate_voice(script)
                 if audio:
                     self._add_status("   ✅ Готово")
                 else:
                     self._add_status("   ⚠️ Без звука")
-                
                 self._add_status("🎬 Видео...")
                 video_path = self.video_gen.create_video(frames, audio, script)
-                
                 if os.path.exists(video_path) and os.path.getsize(video_path) > 1000:
                     size_mb = os.path.getsize(video_path) / 1024 / 1024
                     self._add_status(f"✅ ГОТОВО! {size_mb:.1f} MB")
                     self.videos_created.append(video_path)
                 else:
                     self._add_status("⚠️ Ошибка")
-                
                 self._cleanup()
-                
             except Exception as e:
                 self._add_status(f"❌ Ошибка: {e}")
                 import traceback
                 self._add_status(traceback.format_exc())
-        
         return self.videos_created
     
     def _add_status(self, msg: str):
@@ -331,26 +300,28 @@ class SCPBot:
 
 # ==================== STREAMLIT UI ====================
 def main():
-    st.set_page_config(
-        page_title="SCP Video Bot (Hugging Face)",
-        page_icon="🤗",
-        layout="wide"
-    )
-    
-    st.title("🤗 SCP Video Bot + Hugging Face API")
+    st.set_page_config(page_title="SCP Video Bot (Replicate)", page_icon="🎨", layout="wide")
+    st.title("🎨 SCP Video Bot + Replicate API")
     st.markdown("Создаёт видео с рисунками через нейросеть (без установки!)")
     st.markdown("---")
     
-    hf_api = ImageGeneratorHF(CONFIG['hf_token'], CONFIG['hf_model'])
+    # Проверка токена
+    if CONFIG['replicate_token'] == 'r8_ваш_токен':
+        st.warning("⚠️ Вставьте свой токен Replicate в файл `app.py` (строка `replicate_token`)")
+        st.markdown("1. Зарегистрируйтесь на [replicate.com](https://replicate.com)")
+        st.markdown("2. Получите API-токен в настройках")
+        st.markdown("3. Замените `r8_ваш_токен` в коде")
+        return
+    
+    api = ReplicateGenerator(CONFIG['replicate_token'], CONFIG['replicate_model'])
     
     with st.sidebar:
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("🤗 Модель: " + CONFIG['hf_model'])
+        st.info("🎨 Модель: Stable Diffusion (Replicate)")
         st.info("⏱️ ~10-20 секунд на кадр")
         st.markdown("---")
-        
         if st.button("🗑️ Очистить временные файлы"):
             shutil.rmtree(CONFIG['temp_dir'], ignore_errors=True)
             shutil.rmtree(CONFIG['output_dir'], ignore_errors=True)
@@ -360,17 +331,14 @@ def main():
             st.rerun()
     
     col1, col2 = st.columns([2, 1])
-    
     with col1:
-        if st.button("🤗 Сгенерировать видео", type="primary", use_container_width=True):
+        if st.button("🎨 Сгенерировать видео", type="primary", use_container_width=True):
             with st.spinner("Генерация видео..."):
-                bot = SCPBot(hf_api)
+                bot = SCPBot(api)
                 videos = bot.run(count=count)
-                
                 st.subheader("📊 Лог работы")
                 for msg in bot.status_messages:
                     st.text(msg)
-                
                 if videos:
                     st.subheader("📁 Готовые видео")
                     for video_path in videos:
