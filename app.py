@@ -29,6 +29,17 @@ except ImportError:
     subprocess.check_call(['pip', 'install', 'edge-tts'])
     import edge_tts
 
+# ==================== CLIP (для семантического поиска) ====================
+CLIP_AVAILABLE = False
+try:
+    from transformers import CLIPProcessor, CLIPModel
+    import torch
+    CLIP_AVAILABLE = True
+except ImportError:
+    st.warning("⚠️ Библиотеки для CLIP не установлены. Семантический поиск отключён.")
+    # Если нет, можно попробовать установить, но это не рекомендуется в рантайме,
+    # поэтому просто предупреждаем.
+
 # ==================== ФИКС ДЛЯ ANTIALIAS ====================
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
@@ -94,73 +105,229 @@ SCP_DATABASE = [
     }
 ]
 
-# ==================== РЕЗЕРВНАЯ БАЗА ИЗОБРАЖЕНИЙ (если поиск не сработает) ====================
-# Это реальные URL изображений SCP из открытых источников
-FALLBACK_IMAGES = {
+# ==================== ОСНОВНЫЕ ИЗОБРАЖЕНИЯ (СМЫСЛОВЫЕ) ====================
+# Это изображения, которые ТОЧНО соответствуют SCP (приоритет выше поиска)
+PRIMARY_IMAGES = {
     "173": [
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/SCP-173_Photo.jpg/800px-SCP-173_Photo.jpg",
-        "https://static.wikia.nocookie.net/scp-foundation/images/3/3d/SCP-173.jpg"
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/SCP-173_Photo.jpg/800px-SCP-173_Photo.jpg"
     ],
-    "049": ["https://static.wikia.nocookie.net/scp-foundation/images/3/38/SCP-049.jpg"],
-    "096": ["https://static.wikia.nocookie.net/scp-foundation/images/0/09/SCP-096.jpg"],
-    "106": ["https://static.wikia.nocookie.net/scp-foundation/images/8/8a/SCP-106.jpg"],
-    "682": ["https://static.wikia.nocookie.net/scp-foundation/images/5/5a/SCP-682.jpg"],
-    "999": ["https://static.wikia.nocookie.net/scp-foundation/images/6/68/SCP-999.jpg"],
-    "087": ["https://static.wikia.nocookie.net/scp-foundation/images/1/19/SCP-087.jpg"],
-    "3000": ["https://static.wikia.nocookie.net/scp-foundation/images/3/3d/SCP-3000.jpg"]
+    "049": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/3/38/SCP-049.jpg"
+    ],
+    "096": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/0/09/SCP-096.jpg"
+    ],
+    "106": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/8/8a/SCP-106.jpg"
+    ],
+    "682": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/5/5a/SCP-682.jpg"
+    ],
+    "999": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/6/68/SCP-999.jpg"
+    ],
+    "087": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/1/19/SCP-087.jpg"
+    ],
+    "3000": [
+        "https://static.wikia.nocookie.net/scp-foundation/images/3/3d/SCP-3000.jpg"
+    ]
 }
 
-# ==================== ПОИСК ИЗОБРАЖЕНИЙ ЧЕРЕЗ BING ====================
-class ImageSearcher:
+# ==================== ПОИСК ИЗОБРАЖЕНИЙ В ИНТЕРНЕТЕ (Bing) ====================
+class BingImageSearcher:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
     
-    def search(self, query: str, max_results: int = 1) -> List[str]:
-        """Ищет изображения через Bing (без ключа)"""
+    def search(self, query: str, max_results: int = 10) -> List[str]:
         urls = []
         try:
-            # Формируем URL для поиска изображений Bing
-            search_url = f"https://www.bing.com/images/search?q={query.replace(' ', '+')}&form=HDRSC2&first=1&count=10"
+            search_url = f"https://www.bing.com/images/search?q={query.replace(' ', '+')}&form=HDRSC2&first=1&count={max_results*2}"
             response = self.session.get(search_url, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                # Ищем все ссылки на изображения
+                # Ищем изображения
                 for img in soup.find_all('img', class_='mimg'):
                     src = img.get('src')
                     if src and src.startswith('http'):
                         urls.append(src)
-                        if len(urls) >= max_results:
-                            break
-                # Если не нашли, ищем в data-src
+                # Если не нашли, пробуем другие атрибуты
                 if not urls:
                     for img in soup.find_all('img', attrs={'data-src': True}):
                         src = img['data-src']
                         if src.startswith('http'):
                             urls.append(src)
-                            if len(urls) >= max_results:
-                                break
         except Exception as e:
             st.warning(f"Ошибка Bing-поиска: {e}")
-        return urls
+        return urls[:max_results]
+
+# ==================== СЕМАНТИЧЕСКОЕ РАНЖИРОВАНИЕ (CLIP) ====================
+class SemanticRanker:
+    def __init__(self):
+        self.model = None
+        self.processor = None
+        self.device = "cpu"
+        self.ready = False
+        if CLIP_AVAILABLE:
+            try:
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device)
+                self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+                self.ready = True
+                st.info(f"✅ CLIP загружен на {self.device.upper()}")
+            except Exception as e:
+                st.error(f"❌ Ошибка загрузки CLIP: {e}")
+                self.ready = False
+        else:
+            st.warning("⚠️ CLIP не доступен. Будет использован обычный поиск.")
+    
+    def rank_images(self, query: str, image_urls: List[str], top_k: int = 1) -> List[str]:
+        """Возвращает URL изображений, отсортированные по релевантности к запросу."""
+        if not self.ready or not image_urls:
+            return image_urls[:top_k] if image_urls else []
+        
+        # Загружаем изображения
+        images = []
+        valid_urls = []
+        for url in image_urls[:10]:  # не более 10 для скорости
+            try:
+                response = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
+                if response.status_code == 200 and 'image' in response.headers.get('content-type', ''):
+                    img = Image.open(io.BytesIO(response.content)).convert('RGB')
+                    images.append(img)
+                    valid_urls.append(url)
+            except Exception as e:
+                continue
+        
+        if not images:
+            return image_urls[:top_k]
+        
+        # Подготовка данных для CLIP
+        inputs = self.processor(
+            text=[query] * len(images),
+            images=images,
+            return_tensors="pt",
+            padding=True
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            logits_per_image = outputs.logits_per_image  # (n_images, n_texts)
+            scores = logits_per_image.squeeze().cpu().numpy()
+        
+        # Сортировка по убыванию сходства
+        sorted_indices = scores.argsort()[::-1]
+        sorted_urls = [valid_urls[i] for i in sorted_indices[:top_k]]
+        return sorted_urls
+
+# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
+class ScriptGenerator:
+    def generate_script(self, scp_data: dict) -> dict:
+        scenes = [
+            {
+                "keywords": f"SCP-{scp_data['number']} {scp_data['name']} horror dark atmosphere",
+                "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.",
+                "duration": 7
+            },
+            {
+                "keywords": f"SCP-{scp_data['number']} {scp_data['name']} closeup detailed",
+                "voice_text": f"{scp_data['text']}",
+                "duration": 8
+            },
+            {
+                "keywords": f"SCP-{scp_data['number']} creepy movement",
+                "voice_text": "Оно двигается. Не как человек. Слишком плавно.",
+                "duration": 7
+            },
+            {
+                "keywords": f"SCP-{scp_data['number']} shadows horror",
+                "voice_text": "Я слышал голоса. Они звали меня по имени.",
+                "duration": 7
+            },
+            {
+                "keywords": f"SCP-{scp_data['number']} scary eyes",
+                "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.",
+                "duration": 7
+            },
+            {
+                "keywords": f"SCP-{scp_data['number']} behind you",
+                "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.",
+                "duration": 7
+            }
+        ]
+        return {
+            "title": f"SCP-{scp_data['number']} | {scp_data['name']}",
+            "scp_number": scp_data['number'],
+            "scp_name": scp_data['name'],
+            "author": scp_data['author'],
+            "scenes": scenes,
+            "scp_data": scp_data
+        }
+
+# ==================== ГЕНЕРАТОР КАДРОВ ====================
+class ImageGenerator:
+    def __init__(self, ranker: SemanticRanker):
+        self.ranker = ranker
+        self.bing = BingImageSearcher()
+        self.fallback = PRIMARY_IMAGES
+    
+    def generate_frames(self, script: dict) -> list:
+        frames = []
+        total = len(script['scenes'])
+        scp_num = script['scp_number']
+        
+        # Основные изображения для SCP (если есть)
+        primary_urls = self.fallback.get(scp_num, [])
+        
+        for i, scene in enumerate(script['scenes']):
+            frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
+            
+            # 1. Пытаемся использовать основное изображение (точное)
+            if primary_urls:
+                url = primary_urls[i % len(primary_urls)]
+                st.text(f"   🖼️ Основное изображение SCP-{scp_num} (кадр {i+1}/{total})")
+                if self._download_image(url, frame_path):
+                    frames.append({'path': frame_path, 'duration': scene['duration']})
+                    continue
+            
+            # 2. Семантический поиск через Bing + CLIP
+            st.text(f"   🧠 Семантический поиск: '{scene['keywords']}'...")
+            # Сначала получаем несколько URL через Bing
+            raw_urls = self.bing.search(scene['keywords'], max_results=6)
+            if raw_urls:
+                # Ранжируем через CLIP
+                ranked_urls = self.ranker.rank_images(scene['keywords'], raw_urls, top_k=1)
+                if ranked_urls:
+                    if self._download_image(ranked_urls[0], frame_path):
+                        frames.append({'path': frame_path, 'duration': scene['duration']})
+                        continue
+            
+            # 3. Если ничего не сработало — создаём заглушку
+            st.text(f"   🎨 Заглушка для кадра {i+1}")
+            img = self._create_fallback_image(i + int(scp_num))
+            img.save(frame_path)
+            frames.append({'path': frame_path, 'duration': scene['duration']})
+        
+        return frames
     
     @staticmethod
-    def download_image(url: str, save_path: str) -> bool:
-        """Скачивает изображение по URL"""
+    def _download_image(url: str, save_path: str) -> bool:
         try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(url, headers=headers, timeout=15)
             if response.status_code == 200 and 'image' in response.headers.get('content-type', ''):
                 img = Image.open(io.BytesIO(response.content))
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
-                width, height = img.size
-                if width > height:
-                    crop = height
-                    left = (width - crop) // 2
-                    img = img.crop((left, 0, left + crop, height))
+                w, h = img.size
+                if w > h:
+                    crop = h
+                    left = (w - crop) // 2
+                    img = img.crop((left, 0, left + crop, h))
                 img = img.resize((720, 1280), Image.LANCZOS)
                 img.save(save_path)
                 return True
@@ -169,8 +336,7 @@ class ImageSearcher:
         return False
     
     @staticmethod
-    def create_fallback_image(seed: int) -> Image.Image:
-        """Создаёт заглушку (скетч)"""
+    def _create_fallback_image(seed: int) -> Image.Image:
         width, height = 720, 1280
         img = Image.new('RGB', (width, height), color=(240, 235, 225))
         draw = ImageDraw.Draw(img)
@@ -192,90 +358,6 @@ class ImageSearcher:
         enhancer = ImageEnhance.Brightness(img)
         img.paste(enhancer.enhance(0.6), mask=mask)
         return img
-
-# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
-class ScriptGenerator:
-    def generate_script(self, scp_data: dict) -> dict:
-        scenes = [
-            {
-                "keywords": f"{scp_data['name']} SCP horror dark atmosphere",
-                "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.",
-                "duration": 7
-            },
-            {
-                "keywords": f"{scp_data['name']} SCP detailed closeup",
-                "voice_text": f"{scp_data['text']}",
-                "duration": 8
-            },
-            {
-                "keywords": f"{scp_data['name']} creepy movement",
-                "voice_text": "Оно двигается. Не как человек. Слишком плавно.",
-                "duration": 7
-            },
-            {
-                "keywords": f"{scp_data['name']} shadows horror",
-                "voice_text": "Я слышал голоса. Они звали меня по имени.",
-                "duration": 7
-            },
-            {
-                "keywords": f"{scp_data['name']} scary eyes",
-                "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.",
-                "duration": 7
-            },
-            {
-                "keywords": f"{scp_data['name']} behind you",
-                "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.",
-                "duration": 7
-            }
-        ]
-        return {
-            "title": f"SCP-{scp_data['number']} | {scp_data['name']}",
-            "scp_number": scp_data['number'],
-            "scp_name": scp_data['name'],
-            "author": scp_data['author'],
-            "scenes": scenes,
-            "scp_data": scp_data
-        }
-
-# ==================== ГЕНЕРАТОР КАДРОВ (с поиском И резервной базой) ====================
-class ImageGenerator:
-    def __init__(self, searcher: ImageSearcher):
-        self.searcher = searcher
-    
-    def generate_frames(self, script: dict) -> list:
-        frames = []
-        total = len(script['scenes'])
-        scp_num = script['scp_number']
-        
-        # Резервные изображения для этого SCP
-        fallback_urls = FALLBACK_IMAGES.get(scp_num, [])
-        
-        for i, scene in enumerate(script['scenes']):
-            st.text(f"   🔍 Поиск кадра {i+1}/{total}: '{scene['keywords']}'...")
-            
-            # 1. Пытаемся найти через Bing
-            urls = self.searcher.search(scene['keywords'], max_results=1)
-            
-            # 2. Если не найдено, используем резервные изображения
-            if not urls and fallback_urls:
-                # Берём изображение по кругу
-                url = fallback_urls[i % len(fallback_urls)]
-                urls = [url]
-                st.text(f"   📦 Использую резервное изображение для SCP-{scp_num}")
-            
-            frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
-            
-            if urls:
-                success = self.searcher.download_image(urls[0], frame_path)
-                if not success:
-                    img = self.searcher.create_fallback_image(i + int(scp_num))
-                    img.save(frame_path)
-            else:
-                img = self.searcher.create_fallback_image(i + int(scp_num))
-                img.save(frame_path)
-            
-            frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
-        return frames
 
 # ==================== ОЗВУЧКА ====================
 class VoiceGenerator:
@@ -350,9 +432,9 @@ class VideoGenerator:
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
-    def __init__(self, searcher: ImageSearcher):
+    def __init__(self, ranker: SemanticRanker):
         self.script_gen = ScriptGenerator()
-        self.image_gen = ImageGenerator(searcher)
+        self.image_gen = ImageGenerator(ranker)
         self.voice_gen = VoiceGenerator()
         self.video_gen = VideoGenerator()
         self.videos_created = []
@@ -370,7 +452,7 @@ class SCPBot:
             try:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
-                self._add_status("🔍 Поиск изображений в интернете...")
+                self._add_status("🖼️ Генерация кадров (семантический поиск)...")
                 frames = self.image_gen.generate_frames(script)
                 self._add_status(f"   ✅ {len(frames)} кадров")
                 self._add_status("🎤 Озвучка...")
@@ -406,20 +488,24 @@ class SCPBot:
 
 # ==================== STREAMLIT UI ====================
 def main():
-    st.set_page_config(page_title="SCP Video Bot (Bing + Fallback)", page_icon="🌐", layout="wide")
-    st.title("🌐 SCP Video Bot — поиск кадров через Bing")
-    st.markdown("Автоматически ищет изображения по сценарию, если не найдёт — использует резервную базу")
+    st.set_page_config(page_title="SCP Video Bot (Semantic AI)", page_icon="🧠", layout="wide")
+    st.title("🧠 SCP Video Bot — семантический поиск изображений")
+    st.markdown("Использует CLIP для поиска самых осмысленных кадров по сценарию")
     st.markdown("---")
     
-    searcher = ImageSearcher()
+    # Инициализация семантического ранкера
+    ranker = SemanticRanker()
     
     with st.sidebar:
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("🌐 Поиск через Bing (бесплатно, без регистрации)")
-        st.info("📦 Резерв: готовые изображения SCP из вики")
-        st.info("⏱️ ~1-2 минуты на видео")
+        if ranker.ready:
+            st.success("✅ Семантический поиск активен (CLIP)")
+        else:
+            st.warning("⚠️ Работает только поиск по ключевым словам (без CLIP)")
+        st.info("🖼️ Приоритет: точные изображения SCP → семантический поиск → заглушки")
+        st.info("⏱️ ~2-3 минуты на видео")
         st.markdown("---")
         if st.button("🗑️ Очистить временные файлы"):
             shutil.rmtree(CONFIG['temp_dir'], ignore_errors=True)
@@ -431,9 +517,9 @@ def main():
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🌐 Сгенерировать видео", type="primary", use_container_width=True):
+        if st.button("🧠 Сгенерировать видео", type="primary", use_container_width=True):
             with st.spinner("Поиск и сборка видео..."):
-                bot = SCPBot(searcher)
+                bot = SCPBot(ranker)
                 videos = bot.run(count=count)
                 st.subheader("📊 Лог работы")
                 for msg in bot.status_messages:
