@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 import random
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import io
+from bs4 import BeautifulSoup
 
 # ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
 try:
@@ -27,13 +28,6 @@ except ImportError:
     import subprocess
     subprocess.check_call(['pip', 'install', 'edge-tts'])
     import edge_tts
-
-try:
-    from googlesearch import search
-except ImportError:
-    import subprocess
-    subprocess.check_call(['pip', 'install', 'googlesearch-python'])
-    from googlesearch import search
 
 # ==================== ФИКС ДЛЯ ANTIALIAS ====================
 if not hasattr(Image, 'ANTIALIAS'):
@@ -100,33 +94,61 @@ SCP_DATABASE = [
     }
 ]
 
-# ==================== ПОИСК ИЗОБРАЖЕНИЙ ЧЕРЕЗ GOOGLE ====================
+# ==================== РЕЗЕРВНАЯ БАЗА ИЗОБРАЖЕНИЙ (если поиск не сработает) ====================
+# Это реальные URL изображений SCP из открытых источников
+FALLBACK_IMAGES = {
+    "173": [
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/SCP-173_Photo.jpg/800px-SCP-173_Photo.jpg",
+        "https://static.wikia.nocookie.net/scp-foundation/images/3/3d/SCP-173.jpg"
+    ],
+    "049": ["https://static.wikia.nocookie.net/scp-foundation/images/3/38/SCP-049.jpg"],
+    "096": ["https://static.wikia.nocookie.net/scp-foundation/images/0/09/SCP-096.jpg"],
+    "106": ["https://static.wikia.nocookie.net/scp-foundation/images/8/8a/SCP-106.jpg"],
+    "682": ["https://static.wikia.nocookie.net/scp-foundation/images/5/5a/SCP-682.jpg"],
+    "999": ["https://static.wikia.nocookie.net/scp-foundation/images/6/68/SCP-999.jpg"],
+    "087": ["https://static.wikia.nocookie.net/scp-foundation/images/1/19/SCP-087.jpg"],
+    "3000": ["https://static.wikia.nocookie.net/scp-foundation/images/3/3d/SCP-3000.jpg"]
+}
+
+# ==================== ПОИСК ИЗОБРАЖЕНИЙ ЧЕРЕЗ BING ====================
 class ImageSearcher:
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Mozilla/5.0'})
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
     
     def search(self, query: str, max_results: int = 1) -> List[str]:
+        """Ищет изображения через Bing (без ключа)"""
         urls = []
         try:
-            search_query = f"{query} image"
-            for url in search(search_query, num_results=max_results * 3, lang='en'):
-                if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
-                    urls.append(url)
-                    if len(urls) >= max_results:
-                        break
-            if not urls:
-                for url in search(search_query, num_results=max_results * 3, lang='en'):
-                    if 'img' in url or 'photo' in url or 'image' in url:
-                        urls.append(url)
+            # Формируем URL для поиска изображений Bing
+            search_url = f"https://www.bing.com/images/search?q={query.replace(' ', '+')}&form=HDRSC2&first=1&count=10"
+            response = self.session.get(search_url, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Ищем все ссылки на изображения
+                for img in soup.find_all('img', class_='mimg'):
+                    src = img.get('src')
+                    if src and src.startswith('http'):
+                        urls.append(src)
                         if len(urls) >= max_results:
                             break
+                # Если не нашли, ищем в data-src
+                if not urls:
+                    for img in soup.find_all('img', attrs={'data-src': True}):
+                        src = img['data-src']
+                        if src.startswith('http'):
+                            urls.append(src)
+                            if len(urls) >= max_results:
+                                break
         except Exception as e:
-            st.warning(f"Ошибка Google-поиска: {e}")
+            st.warning(f"Ошибка Bing-поиска: {e}")
         return urls
     
     @staticmethod
     def download_image(url: str, save_path: str) -> bool:
+        """Скачивает изображение по URL"""
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             response = requests.get(url, headers=headers, timeout=15)
@@ -148,6 +170,7 @@ class ImageSearcher:
     
     @staticmethod
     def create_fallback_image(seed: int) -> Image.Image:
+        """Создаёт заглушку (скетч)"""
         width, height = 720, 1280
         img = Image.new('RGB', (width, height), color=(240, 235, 225))
         draw = ImageDraw.Draw(img)
@@ -214,7 +237,7 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
-# ==================== ГЕНЕРАТОР КАДРОВ ====================
+# ==================== ГЕНЕРАТОР КАДРОВ (с поиском И резервной базой) ====================
 class ImageGenerator:
     def __init__(self, searcher: ImageSearcher):
         self.searcher = searcher
@@ -222,18 +245,35 @@ class ImageGenerator:
     def generate_frames(self, script: dict) -> list:
         frames = []
         total = len(script['scenes'])
+        scp_num = script['scp_number']
+        
+        # Резервные изображения для этого SCP
+        fallback_urls = FALLBACK_IMAGES.get(scp_num, [])
+        
         for i, scene in enumerate(script['scenes']):
             st.text(f"   🔍 Поиск кадра {i+1}/{total}: '{scene['keywords']}'...")
+            
+            # 1. Пытаемся найти через Bing
             urls = self.searcher.search(scene['keywords'], max_results=1)
+            
+            # 2. Если не найдено, используем резервные изображения
+            if not urls and fallback_urls:
+                # Берём изображение по кругу
+                url = fallback_urls[i % len(fallback_urls)]
+                urls = [url]
+                st.text(f"   📦 Использую резервное изображение для SCP-{scp_num}")
+            
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
+            
             if urls:
                 success = self.searcher.download_image(urls[0], frame_path)
                 if not success:
-                    img = self.searcher.create_fallback_image(i + int(script['scp_number']))
+                    img = self.searcher.create_fallback_image(i + int(scp_num))
                     img.save(frame_path)
             else:
-                img = self.searcher.create_fallback_image(i + int(script['scp_number']))
+                img = self.searcher.create_fallback_image(i + int(scp_num))
                 img.save(frame_path)
+            
             frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
         return frames
 
@@ -366,9 +406,9 @@ class SCPBot:
 
 # ==================== STREAMLIT UI ====================
 def main():
-    st.set_page_config(page_title="SCP Video Bot (Google)", page_icon="🌐", layout="wide")
-    st.title("🌐 SCP Video Bot — поиск кадров через Google")
-    st.markdown("Автоматически ищет изображения по сценарию (без ключей)")
+    st.set_page_config(page_title="SCP Video Bot (Bing + Fallback)", page_icon="🌐", layout="wide")
+    st.title("🌐 SCP Video Bot — поиск кадров через Bing")
+    st.markdown("Автоматически ищет изображения по сценарию, если не найдёт — использует резервную базу")
     st.markdown("---")
     
     searcher = ImageSearcher()
@@ -377,7 +417,8 @@ def main():
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("🌐 Поиск через Google (бесплатно, без регистрации)")
+        st.info("🌐 Поиск через Bing (бесплатно, без регистрации)")
+        st.info("📦 Резерв: готовые изображения SCP из вики")
         st.info("⏱️ ~1-2 минуты на видео")
         st.markdown("---")
         if st.button("🗑️ Очистить временные файлы"):
