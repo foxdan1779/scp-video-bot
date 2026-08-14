@@ -47,6 +47,7 @@ CONFIG = {
     'temp_dir': './temp'
 }
 
+# Создаём папки, если их нет
 for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
     Path(folder).mkdir(parents=True, exist_ok=True)
 
@@ -114,16 +115,19 @@ PRIMARY_IMAGES = {
     "3000": ["https://static.wikia.nocookie.net/scp-foundation/images/3/3d/SCP-3000.jpg"]
 }
 
-# ==================== ПОИСК ИЗОБРАЖЕНИЙ (Bing) ====================
+# ==================== ПОИСК ИЗОБРАЖЕНИЙ (Bing с улучшенными запросами) ====================
 class BingImageSearcher:
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Mozilla/5.0'})
+        self.session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
     
     def search(self, query: str, max_results: int = 6) -> List[str]:
+        """Ищет изображения с добавлением контекста SCP"""
+        # Улучшаем запрос, добавляя ключевые слова
+        enhanced_query = f"{query} SCP Foundation horror art"
+        search_url = f"https://www.bing.com/images/search?q={enhanced_query.replace(' ', '+')}&form=HDRSC2&first=1&count={max_results*2}"
         urls = []
         try:
-            search_url = f"https://www.bing.com/images/search?q={query.replace(' ', '+')}&form=HDRSC2&first=1&count={max_results*2}"
             response = self.session.get(search_url, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
@@ -137,8 +141,26 @@ class BingImageSearcher:
                         if src.startswith('http'):
                             urls.append(src)
         except Exception as e:
-            st.warning(f"Ошибка поиска: {e}")
+            st.warning(f"Ошибка Bing-поиска: {e}")
         return urls[:max_results]
+
+    def search_wiki(self, scp_number: str) -> List[str]:
+        """Ищет изображения на вики SCP (прямые ссылки)"""
+        urls = []
+        try:
+            wiki_url = f"https://scp-wiki.wikidot.com/scp-{scp_number}"
+            response = self.session.get(wiki_url, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for img in soup.find_all('img'):
+                    src = img.get('src')
+                    if src and src.startswith('http'):
+                        # Фильтруем только изображения, содержащие 'thumb' или 'large'
+                        if 'thumb' in src or 'large' in src:
+                            urls.append(src)
+        except:
+            pass
+        return urls[:3]
 
 # ==================== СЕМАНТИЧЕСКИЙ РАНКЕР (CLIP) ====================
 class SemanticRanker:
@@ -150,13 +172,15 @@ class SemanticRanker:
         if CLIP_AVAILABLE:
             try:
                 self.device = "cuda" if torch.cuda.is_available() else "cpu"
-                self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device)
-                self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+                # Используем более точную модель
+                self.model = CLIPModel.from_pretrained("laion/CLIP-ViT-B-32-laion2B-s34B-b79K").to(self.device)
+                self.processor = CLIPProcessor.from_pretrained("laion/CLIP-ViT-B-32-laion2B-s34B-b79K")
                 self.ready = True
-            except:
+            except Exception as e:
+                st.warning(f"Не удалось загрузить CLIP: {e}")
                 self.ready = False
     
-    def rank_images(self, query: str, image_urls: List[str], top_k: int = 3) -> List[str]:
+    def rank_images(self, query: str, image_urls: List[str], top_k: int = 4) -> List[str]:
         if not self.ready or not image_urls:
             return image_urls[:top_k]
         images = []
@@ -181,7 +205,7 @@ class SemanticRanker:
         sorted_urls = [valid_urls[i] for i in sorted_indices[:top_k]]
         return sorted_urls
 
-# ==================== ЗАГРУЗЧИК ИЗОБРАЖЕНИЙ ====================
+# ==================== ЗАГРУЗЧИК И ОБРАБОТЧИК ИЗОБРАЖЕНИЙ ====================
 def download_image(url: str) -> Optional[Image.Image]:
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -226,6 +250,13 @@ def create_fallback_image(seed: int) -> Image.Image:
     enhancer = ImageEnhance.Brightness(img)
     img.paste(enhancer.enhance(0.6), mask=mask)
     return img
+
+def prepare_image_display(img: Image.Image) -> io.BytesIO:
+    """Конвертирует PIL Image в BytesIO для отображения без сохранения на диск"""
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
 
 # ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
 def generate_script(scp_data: dict) -> dict:
@@ -293,7 +324,7 @@ def create_video(frames: list, audio_path: str, script: dict) -> str:
     except:
         return None
 
-# ==================== STREAMLIT UI ====================
+# ==================== ИНИЦИАЛИЗАЦИЯ СОСТОЯНИЯ ====================
 def init_session_state():
     if 'step' not in st.session_state:
         st.session_state.step = 'select_scp'
@@ -302,9 +333,9 @@ def init_session_state():
     if 'script' not in st.session_state:
         st.session_state.script = None
     if 'scene_selections' not in st.session_state:
-        st.session_state.scene_selections = {}
+        st.session_state.scene_selections = {}  # ключ: индекс сцены, значение: путь к выбранному изображению
     if 'scene_images' not in st.session_state:
-        st.session_state.scene_images = {}
+        st.session_state.scene_images = {}      # ключ: индекс сцены, значение: список (BytesIO, PIL.Image)
     if 'audio_path' not in st.session_state:
         st.session_state.audio_path = None
     if 'video_path' not in st.session_state:
@@ -312,11 +343,14 @@ def init_session_state():
     if 'ranker' not in st.session_state:
         st.session_state.ranker = SemanticRanker()
         st.session_state.bing = BingImageSearcher()
+    if 'current_scene' not in st.session_state:
+        st.session_state.current_scene = 0
 
+# ==================== ОСНОВНОЙ ПОТОК ====================
 def main():
-    st.set_page_config(page_title="SCP Video Creator (Interactive)", page_icon="🎬", layout="wide")
-    st.title("🎬 SCP Video Creator — пошаговое создание")
-    st.markdown("Выбирайте сценарий и изображения на каждом шаге")
+    st.set_page_config(page_title="SCP Video Creator", page_icon="🎬", layout="wide")
+    st.title("🎬 SCP Video Creator — пошаговое создание с выбором кадров")
+    st.markdown("Выберите SCP, подтвердите сценарий, подберите изображения для каждой сцены (можно загрузить свои)")
     st.markdown("---")
     
     init_session_state()
@@ -336,6 +370,12 @@ def main():
             if st.button("✅ Выбрать и создать сценарий", use_container_width=True):
                 st.session_state.scp_choice = scp
                 st.session_state.script = generate_script(scp)
+                # Сбрасываем предыдущие выборы
+                st.session_state.scene_selections = {}
+                st.session_state.scene_images = {}
+                st.session_state.current_scene = 0
+                st.session_state.audio_path = None
+                st.session_state.video_path = None
                 st.session_state.step = 'confirm_script'
                 st.rerun()
     
@@ -356,23 +396,19 @@ def main():
                 st.rerun()
         with col2:
             if st.button("✅ Принять сценарий", use_container_width=True):
-                st.session_state.step = 'select_images'
                 st.session_state.current_scene = 0
+                st.session_state.step = 'select_images'
                 st.rerun()
         with col3:
             if st.button("⬅️ Назад к выбору SCP", use_container_width=True):
                 st.session_state.step = 'select_scp'
                 st.rerun()
     
-    # ==================== ШАГ 3: ВЫБОР ИЗОБРАЖЕНИЙ ПО СЦЕНАМ ====================
+    # ==================== ШАГ 3: ВЫБОР ИЗОБРАЖЕНИЙ ДЛЯ КАЖДОЙ СЦЕНЫ ====================
     elif st.session_state.step == 'select_images':
         script = st.session_state.script
         scenes = script['scenes']
         total = len(scenes)
-        
-        # Индекс текущей сцены
-        if 'current_scene' not in st.session_state:
-            st.session_state.current_scene = 0
         idx = st.session_state.current_scene
         
         if idx < total:
@@ -381,96 +417,137 @@ def main():
             st.write(f"**Текст:** {scene['voice_text']}")
             st.write(f"**Ключевые слова:** {scene['keywords']}")
             
-            # Кнопка для поиска изображений
-            if st.button("🔍 Найти изображения для этой сцены", use_container_width=True):
-                with st.spinner("Поиск..."):
-                    # Сначала проверяем основное изображение SCP
-                    primary = PRIMARY_IMAGES.get(script['scp_number'], [])
-                    urls = []
-                    if primary:
-                        urls = primary.copy()
-                    # Добавляем результаты Bing
-                    bing_urls = st.session_state.bing.search(scene['keywords'], max_results=6)
-                    urls.extend(bing_urls)
-                    # Ранжируем через CLIP (если доступен)
-                    if st.session_state.ranker.ready:
-                        ranked = st.session_state.ranker.rank_images(scene['keywords'], urls, top_k=4)
-                    else:
-                        ranked = urls[:4]
-                    # Скачиваем и сохраняем
-                    images = []
-                    valid_paths = []
-                    for url in ranked:
-                        img = download_image(url)
-                        if img:
-                            img = resize_to_portrait(img)
-                            path = f"{CONFIG['temp_dir']}/images/scene_{idx}_opt_{len(valid_paths)}.png"
-                            img.save(path)
-                            valid_paths.append(path)
-                    # Если нет изображений, создаём заглушку
-                    if not valid_paths:
-                        img = create_fallback_image(idx + int(script['scp_number']))
-                        path = f"{CONFIG['temp_dir']}/images/scene_{idx}_fallback.png"
-                        img.save(path)
-                        valid_paths.append(path)
-                    st.session_state.scene_images[idx] = valid_paths
+            # Блок загрузки своего изображения (всегда доступен)
+            st.write("---")
+            st.write("**📤 Загрузите своё изображение (или выберите из предложенных ниже):**")
+            uploaded_file = st.file_uploader(f"Загрузить изображение для сцены {idx+1}", type=['png', 'jpg', 'jpeg', 'webp'], key=f"upload_{idx}")
+            if uploaded_file is not None:
+                try:
+                    img = Image.open(uploaded_file)
+                    img = resize_to_portrait(img)
+                    path = f"{CONFIG['temp_dir']}/images/scene_{idx}_user.png"
+                    img.save(path)
+                    st.session_state.scene_selections[idx] = path
+                    st.success("✅ Изображение загружено!")
+                    st.session_state.current_scene += 1
+                    # Удаляем временные изображения из памяти, если были
+                    if idx in st.session_state.scene_images:
+                        del st.session_state.scene_images[idx]
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Ошибка загрузки: {e}")
+            
+            st.write("---")
+            st.write("**🔍 Или найдите изображения по ключевым словам:**")
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("🔍 Найти изображения для этой сцены", use_container_width=True):
+                    with st.spinner("Поиск..."):
+                        # Собираем URL из нескольких источников
+                        urls = []
+                        # 1. Основные изображения SCP
+                        primary = PRIMARY_IMAGES.get(script['scp_number'], [])
+                        urls.extend(primary)
+                        # 2. Вики SCP
+                        wiki_urls = st.session_state.bing.search_wiki(script['scp_number'])
+                        urls.extend(wiki_urls)
+                        # 3. Bing с улучшенным запросом
+                        bing_urls = st.session_state.bing.search(scene['keywords'], max_results=6)
+                        urls.extend(bing_urls)
+                        # Ранжируем через CLIP
+                        if st.session_state.ranker.ready and urls:
+                            ranked = st.session_state.ranker.rank_images(scene['keywords'], urls, top_k=4)
+                        else:
+                            ranked = urls[:4]
+                        # Загружаем изображения в память (BytesIO) без сохранения на диск
+                        images = []
+                        for url in ranked:
+                            img = download_image(url)
+                            if img:
+                                img = resize_to_portrait(img)
+                                images.append(img)
+                        if not images:
+                            # Заглушка
+                            img = create_fallback_image(idx + int(script['scp_number']))
+                            images.append(img)
+                        # Сохраняем список PIL Image в сессии (не сохраняем на диск)
+                        st.session_state.scene_images[idx] = images
+                        st.rerun()
+            with col2:
+                # Кнопка пропуска (использовать заглушку)
+                if st.button("⏭️ Пропустить (заглушка)", use_container_width=True):
+                    img = create_fallback_image(idx + int(script['scp_number']))
+                    path = f"{CONFIG['temp_dir']}/images/scene_{idx}_fallback.png"
+                    img.save(path)
+                    st.session_state.scene_selections[idx] = path
+                    st.session_state.current_scene += 1
+                    if idx in st.session_state.scene_images:
+                        del st.session_state.scene_images[idx]
                     st.rerun()
             
-            # Отображение найденных изображений для выбора
+            # Отображение найденных изображений (если есть) с возможностью выбора
             if idx in st.session_state.scene_images and st.session_state.scene_images[idx]:
-                paths = st.session_state.scene_images[idx]
+                images = st.session_state.scene_images[idx]
                 st.write("**Выберите изображение (кликните на вариант):**")
-                cols = st.columns(min(len(paths), 4))
-                selected_path = None
-                for i, path in enumerate(paths):
+                cols = st.columns(min(len(images), 4))
+                selected_idx = None
+                for i, img in enumerate(images):
                     col = cols[i % len(cols)]
                     with col:
-                        img = Image.open(path)
-                        st.image(img, use_container_width=True)
+                        # Показываем изображение из памяти
+                        buf = prepare_image_display(img)
+                        st.image(buf, use_container_width=True)
                         if st.button(f"✅ Выбрать вариант {i+1}", key=f"choose_{idx}_{i}"):
-                            selected_path = path
-                if selected_path:
-                    st.session_state.scene_selections[idx] = selected_path
+                            selected_idx = i
+                if selected_idx is not None:
+                    img = images[selected_idx]
+                    path = f"{CONFIG['temp_dir']}/images/scene_{idx}_selected.png"
+                    img.save(path)
+                    st.session_state.scene_selections[idx] = path
+                    # Очищаем временные данные, чтобы освободить память
+                    del st.session_state.scene_images[idx]
                     st.session_state.current_scene += 1
                     st.rerun()
             else:
-                st.info("Нажмите кнопку 'Найти изображения' для поиска вариантов.")
+                st.info("Нажмите 'Найти изображения' для получения вариантов.")
         else:
             # Все сцены выбраны
             st.session_state.step = 'confirm_images'
             st.rerun()
     
-    # ==================== ШАГ 4: ПОДТВЕРЖДЕНИЕ ВСЕХ КАДРОВ ====================
+    # ==================== ШАГ 4: ПРОВЕРКА ВСЕХ КАДРОВ ====================
     elif st.session_state.step == 'confirm_images':
         st.subheader("4️⃣ Проверьте все выбранные кадры")
         script = st.session_state.script
         scenes = script['scenes']
-        cols = st.columns(3)
-        for i, scene in enumerate(scenes):
-            col = cols[i % 3]
-            with col:
-                if i in st.session_state.scene_selections:
+        # Проверяем, все ли сцены выбраны
+        all_selected = all(i in st.session_state.scene_selections for i in range(len(scenes)))
+        if not all_selected:
+            st.warning("Не все сцены выбраны. Вернитесь к выбору.")
+        else:
+            cols = st.columns(3)
+            for i, scene in enumerate(scenes):
+                col = cols[i % 3]
+                with col:
                     path = st.session_state.scene_selections[i]
                     img = Image.open(path)
                     st.image(img, use_container_width=True)
                     st.write(f"**Сцена {i+1}:** {scene['voice_text'][:50]}...")
-                else:
-                    st.warning(f"Сцена {i+1} не выбрана")
-        st.write("---")
-        col1, col2, col3 = st.columns([1,1,2])
-        with col1:
-            if st.button("⬅️ Вернуться к выбору", use_container_width=True):
-                st.session_state.step = 'select_images'
-                st.rerun()
-        with col2:
-            if st.button("✅ Подтвердить все кадры", use_container_width=True):
-                st.session_state.step = 'generate_audio'
-                st.rerun()
-        with col3:
-            if st.button("🔄 Перегенерировать сценарий", use_container_width=True):
-                st.session_state.script = generate_script(st.session_state.scp_choice)
-                st.session_state.step = 'confirm_script'
-                st.rerun()
+            st.write("---")
+            col1, col2, col3 = st.columns([1,1,2])
+            with col1:
+                if st.button("⬅️ Вернуться к выбору", use_container_width=True):
+                    st.session_state.step = 'select_images'
+                    st.rerun()
+            with col2:
+                if all_selected and st.button("✅ Подтвердить все кадры", use_container_width=True):
+                    st.session_state.step = 'generate_audio'
+                    st.rerun()
+            with col3:
+                if st.button("🔄 Перегенерировать сценарий", use_container_width=True):
+                    st.session_state.script = generate_script(st.session_state.scp_choice)
+                    st.session_state.step = 'confirm_script'
+                    st.rerun()
     
     # ==================== ШАГ 5: ОЗВУЧКА ====================
     elif st.session_state.step == 'generate_audio':
@@ -503,7 +580,7 @@ def main():
             if not path:
                 # Заглушка
                 img = create_fallback_image(i + int(script['scp_number']))
-                path = f"{CONFIG['temp_dir']}/images/fallback_{i}.png"
+                path = f"{CONFIG['temp_dir']}/images/scene_{i}_fallback.png"
                 img.save(path)
             frames.append({'path': path, 'duration': scene['duration']})
         
