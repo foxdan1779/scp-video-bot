@@ -13,19 +13,7 @@ import random
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import io
 
-# ==================== УСТАНОВКА БИБЛИОТЕКИ ДЛЯ ПОИСКА ====================
-try:
-    from duckduckgo_search import DDGS
-except ImportError:
-    import subprocess
-    subprocess.check_call(['pip', 'install', 'duckduckgo-search'])
-    from duckduckgo_search import DDGS
-
-# ==================== ФИКС ДЛЯ ANTIALIAS ====================
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.LANCZOS
-
-# ==================== УСТАНОВКА ОСТАЛЬНЫХ ЗАВИСИМОСТЕЙ ====================
+# ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
 try:
     from moviepy.editor import *
 except ImportError:
@@ -40,6 +28,17 @@ except ImportError:
     subprocess.check_call(['pip', 'install', 'edge-tts'])
     import edge_tts
 
+try:
+    from googlesearch import search
+except ImportError:
+    import subprocess
+    subprocess.check_call(['pip', 'install', 'googlesearch-python'])
+    from googlesearch import search
+
+# ==================== ФИКС ДЛЯ ANTIALIAS ====================
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
+
 # ==================== КОНФИГУРАЦИЯ ====================
 CONFIG = {
     'output_dir': './videos',
@@ -49,7 +48,7 @@ CONFIG = {
 for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
     Path(folder).mkdir(parents=True, exist_ok=True)
 
-# ==================== БАЗА SCP (только текст) ====================
+# ==================== БАЗА SCP ====================
 SCP_DATABASE = [
     {
         "number": "173",
@@ -101,41 +100,35 @@ SCP_DATABASE = [
     }
 ]
 
-# ==================== ПОИСК ИЗОБРАЖЕНИЙ ЧЕРЕЗ DUCKDUCKGO ====================
+# ==================== ПОИСК ИЗОБРАЖЕНИЙ ЧЕРЕЗ GOOGLE ====================
 class ImageSearcher:
     def __init__(self):
-        self.ddgs = DDGS()
+        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        self.session = requests.Session()
+        self.session.headers.update({'User-Agent': self.user_agent})
     
     def search(self, query: str, max_results: int = 1) -> List[str]:
-        """Ищет изображения и возвращает список URL"""
+        """Ищет изображения через Google и возвращает список URL"""
         urls = []
         try:
-            # Ищем изображения с учётом вертикальной ориентации (портрет)
-            results = list(self.ddgs.images(
-                keywords=query,
-                max_results=max_results * 3,  # Берём больше, чтобы отфильтровать
-                safesearch='on'
-            ))
-            # Фильтруем по соотношению сторон (ищем вертикальные)
-            for res in results:
-                # Пропускаем, если нет ширины/высоты
-                if 'width' not in res or 'height' not in res:
-                    continue
-                # Если изображение горизонтальное или квадратное — пропускаем
-                if res['width'] >= res['height']:
-                    continue
-                # Добавляем URL
-                if 'image' in res:
-                    urls.append(res['image'])
+            # Добавляем "image" для поиска картинок
+            search_query = f"{query} image"
+            # Используем библиотеку googlesearch
+            for url in search(search_query, num_results=max_results * 3, lang='en', user_agent=self.user_agent):
+                # Фильтруем только прямые ссылки на изображения
+                if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
+                    urls.append(url)
                     if len(urls) >= max_results:
                         break
-            # Если вертикальных не нашлось, берём любые
+            # Если не нашли, берём любые ссылки (могут быть страницы с картинками)
             if not urls:
-                for res in results[:max_results]:
-                    if 'image' in res:
-                        urls.append(res['image'])
+                for url in search(search_query, num_results=max_results * 3, lang='en', user_agent=self.user_agent):
+                    if 'img' in url or 'photo' in url or 'image' in url:
+                        urls.append(url)
+                        if len(urls) >= max_results:
+                            break
         except Exception as e:
-            st.warning(f"Ошибка поиска: {e}")
+            st.warning(f"Ошибка Google-поиска: {e}")
         return urls
     
     @staticmethod
@@ -144,18 +137,15 @@ class ImageSearcher:
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             response = requests.get(url, headers=headers, timeout=15)
-            if response.status_code == 200:
+            if response.status_code == 200 and 'image' in response.headers.get('content-type', ''):
                 img = Image.open(io.BytesIO(response.content))
-                # Приводим к RGB (на случай PNG с альфа-каналом)
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
-                # Обрезаем до вертикального формата (9:16)
                 width, height = img.size
                 if width > height:
                     crop = height
                     left = (width - crop) // 2
                     img = img.crop((left, 0, left + crop, height))
-                # Ресайз до 720x1280
                 img = img.resize((720, 1280), Image.LANCZOS)
                 img.save(save_path)
                 return True
@@ -191,7 +181,7 @@ class ImageSearcher:
         img.paste(enhancer.enhance(0.6), mask=mask)
         return img
 
-# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ И КЛЮЧЕВЫХ СЛОВ ====================
+# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
 class ScriptGenerator:
     def generate_script(self, scp_data: dict) -> dict:
         scenes = [
@@ -235,7 +225,7 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
-# ==================== ГЕНЕРАТОР КАДРОВ (с поиском) ====================
+# ==================== ГЕНЕРАТОР КАДРОВ ====================
 class ImageGenerator:
     def __init__(self, searcher: ImageSearcher):
         self.searcher = searcher
@@ -388,8 +378,8 @@ class SCPBot:
 
 # ==================== STREAMLIT UI ====================
 def main():
-    st.set_page_config(page_title="SCP Video Bot (DuckDuckGo)", page_icon="🦆", layout="wide")
-    st.title("🦆 SCP Video Bot — поиск кадров через DuckDuckGo")
+    st.set_page_config(page_title="SCP Video Bot (Google)", page_icon="🌐", layout="wide")
+    st.title("🌐 SCP Video Bot — поиск кадров через Google")
     st.markdown("Автоматически ищет изображения по сценарию (без ключей)")
     st.markdown("---")
     
@@ -399,7 +389,7 @@ def main():
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("🦆 Поиск через DuckDuckGo (бесплатно, без регистрации)")
+        st.info("🌐 Поиск через Google (бесплатно, без регистрации)")
         st.info("⏱️ ~1-2 минуты на видео")
         st.markdown("---")
         if st.button("🗑️ Очистить временные файлы"):
@@ -412,7 +402,7 @@ def main():
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🦆 Сгенерировать видео", type="primary", use_container_width=True):
+        if st.button("🌐 Сгенерировать видео", type="primary", use_container_width=True):
             with st.spinner("Поиск и сборка видео..."):
                 bot = SCPBot(searcher)
                 videos = bot.run(count=count)
