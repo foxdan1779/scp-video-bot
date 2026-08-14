@@ -4,4 +4,5 @@ moviepy
 numpy
 edge-tts
 requests
-duckduckgo-search
+googlesearch-python
+beautifulsoup4  # опционально, для запасного метода
