@@ -5,17 +5,12 @@ import json
 import time
 import shutil
 import asyncio
-import requests
+import random
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
-import random
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
-import io
-
-# ==================== ФИКС ДЛЯ ANTIALIAS ====================
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.LANCZOS
+import numpy as np
 
 # ==================== УСТАНОВКА ЗАВИСИМОСТЕЙ ====================
 try:
@@ -35,151 +30,177 @@ except ImportError:
 # ==================== КОНФИГУРАЦИЯ ====================
 CONFIG = {
     'output_dir': './videos',
-    'temp_dir': './temp',
-    'unsplash_key': ''  # Оставьте пустым для 50 запросов/час, или вставьте свой ключ
+    'temp_dir': './temp'
 }
 
 for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
     Path(folder).mkdir(parents=True, exist_ok=True)
 
-# ==================== БАЗА SCP (только текст) ====================
+# ==================== БАЗА SCP ====================
 SCP_DATABASE = [
-    {
-        "number": "173",
-        "name": "Скульптура",
-        "author": "М. Роджерс",
-        "text": "SCP-173 - статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
-    },
-    {
-        "number": "049",
-        "name": "Чумной доктор",
-        "author": "Габриэль",
-        "text": "SCP-049 - гуманоид, который считает себя врачом."
-    },
-    {
-        "number": "096",
-        "name": "Застенчивый парень",
-        "author": "Доктор Дэн",
-        "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."
-    },
-    {
-        "number": "106",
-        "name": "Старый человек",
-        "author": "Доктор Гирс",
-        "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."
-    },
-    {
-        "number": "682",
-        "name": "Трудный для уничтожения ящер",
-        "author": "Доктор Гирс",
-        "text": "SCP-682 - огромная рептилия, которая не умирает."
-    },
-    {
-        "number": "999",
-        "name": "Щекочущий монстр",
-        "author": "Доктор Кейн",
-        "text": "SCP-999 - дружелюбное существо, которое щекочет людей."
-    },
-    {
-        "number": "087",
-        "name": "Лестница в подвал",
-        "author": "Доктор У. Уилсон",
-        "text": "SCP-087 - бесконечная лестница."
-    },
-    {
-        "number": "3000",
-        "name": "Анаджвари",
-        "author": "Доктор В. Д.",
-        "text": "SCP-3000 - гигантский змей."
-    }
+    {"number": "173", "name": "Скульптура", "author": "М. Роджерс", "text": "SCP-173 - статуя из бетона и арматуры."},
+    {"number": "049", "name": "Чумной доктор", "author": "Габриэль", "text": "SCP-049 - гуманоид, который считает себя врачом."},
+    {"number": "096", "name": "Застенчивый парень", "author": "Доктор Дэн", "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."},
+    {"number": "106", "name": "Старый человек", "author": "Доктор Гирс", "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."},
+    {"number": "682", "name": "Трудный для уничтожения ящер", "author": "Доктор Гирс", "text": "SCP-682 - огромная рептилия, которая не умирает."},
+    {"number": "999", "name": "Щекочущий монстр", "author": "Доктор Кейн", "text": "SCP-999 - дружелюбное существо, которое щекочет людей."},
+    {"number": "087", "name": "Лестница в подвал", "author": "Доктор У. Уилсон", "text": "SCP-087 - бесконечная лестница."},
+    {"number": "3000", "name": "Анаджвари", "author": "Доктор В. Д.", "text": "SCP-3000 - гигантский змей."}
 ]
 
-# ==================== ПОИСК ИЗОБРАЖЕНИЙ В ИНТЕРНЕТЕ ====================
-class ImageSearcher:
-    def __init__(self, api_key: str = ""):
-        self.api_key = api_key
-        self.base_url = "https://api.unsplash.com/search/photos"
-        self.headers = {"Authorization": f"Client-ID {api_key}"} if api_key else {}
-    
-    def search(self, query: str, per_page: int = 1) -> List[str]:
-        """Ищет изображения по запросу и возвращает список URL"""
-        params = {
-            "query": query,
-            "per_page": per_page,
-            "orientation": "portrait"  # Для вертикальных видео
-        }
-        try:
-            response = requests.get(self.base_url, headers=self.headers, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                urls = [result['urls']['regular'] for result in data.get('results', [])]
-                return urls
-            elif response.status_code == 403 and "rate limit" in response.text.lower():
-                st.warning("⚠️ Превышен лимит запросов Unsplash (50/час). Использую заглушки.")
-                return []
-            else:
-                st.warning(f"Ошибка поиска: {response.status_code}")
-                return []
-        except Exception as e:
-            st.warning(f"Ошибка соединения: {e}")
-            return []
-    
+# ==================== УЛУЧШЕННЫЙ ГЕНЕРАТОР СКЕТЧЕЙ ====================
+class AdvancedSketchGenerator:
     @staticmethod
-    def download_image(url: str, save_path: str) -> bool:
-        """Скачивает изображение по URL"""
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                img = Image.open(io.BytesIO(response.content))
-                # Приводим к вертикальному формату
-                width, height = img.size
-                if width > height:
-                    crop = height
-                    left = (width - crop) // 2
-                    img = img.crop((left, 0, left + crop, height))
-                img = img.resize((720, 1280), Image.LANCZOS)
-                img.save(save_path)
-                return True
-        except Exception as e:
-            print(f"Ошибка скачивания: {e}")
-        return False
-    
-    @staticmethod
-    def create_fallback_image(seed: int) -> Image.Image:
-        """Заглушка (скетч) если поиск не дал результатов"""
+    def create_scene(seed: int, scp_data: dict, scene_index: int, total_scenes: int) -> Image.Image:
+        """Создаёт атмосферный кадр с вариациями"""
         width, height = 720, 1280
-        img = Image.new('RGB', (width, height), color=(240, 235, 225))
+        random.seed(seed + scene_index * 100)
+        
+        # 1. Фон (бумага/холст с текстурой)
+        bg_color = random.choice([
+            (240, 235, 225),  # светлая бумага
+            (220, 215, 205),  # серая бумага
+            (200, 195, 185),  # тёмная бумага
+            (250, 245, 235)   # почти белая
+        ])
+        img = Image.new('RGB', (width, height), color=bg_color)
         draw = ImageDraw.Draw(img)
-        random.seed(seed)
-        for _ in range(1000):
+        
+        # 2. Текстура
+        for _ in range(2000):
             x = random.randint(0, width-1)
             y = random.randint(0, height-1)
-            br = random.randint(200, 240)
+            br = random.randint(180, 240)
             draw.point((x, y), fill=(br, br-5, br-10))
-        # Рисуем абстрактную фигуру (скетч)
-        cx, cy = width//2, height//2
-        draw.rectangle([cx-100, cy-50, cx+100, cy+250], outline=(50, 50, 60), width=3)
-        draw.ellipse([cx-80, cy-140, cx+80, cy-30], outline=(50, 50, 60), width=3)
-        draw.ellipse([cx-30, cy-90, cx-10, cy-70], fill=(150, 40, 40))
-        draw.ellipse([cx+10, cy-90, cx+30, cy-70], fill=(150, 40, 40))
+        
+        # 3. Случайные линии (эффект эскиза)
+        for _ in range(50):
+            x1 = random.randint(0, width)
+            y1 = random.randint(0, height)
+            x2 = random.randint(0, width)
+            y2 = random.randint(0, height)
+            draw.line([x1, y1, x2, y2], fill=(100, 100, 110), width=random.randint(1, 2))
+        
+        # 4. Рисуем персонажа/объект
+        cx, cy = width//2, height//2 - 50
+        scp_type = int(scp_data['number']) % 5
+        
+        # Выбираем стиль рисования
+        style = random.choice(['sketch', 'doodle', 'rough'])
+        
+        def sketch_line(x1, y1, x2, y2, color, w):
+            steps = max(10, int(((x2-x1)**2 + (y2-y1)**2)**0.5) // 3)
+            for i in range(steps):
+                t = i / steps
+                x = x1 + (x2 - x1) * t + random.randint(-2, 2)
+                y = y1 + (y2 - y1) * t + random.randint(-2, 2)
+                if random.random() > (0.15 if style == 'sketch' else 0.3):
+                    draw.ellipse([x-w//2, y-w//2, x+w//2, y+w//2], fill=color, outline=color)
+        
+        def sketch_ellipse(x1, y1, x2, y2, color, w):
+            steps = 50
+            for i in range(steps):
+                angle = 2 * 3.14159 * i / steps
+                cx_el = (x1 + x2) / 2 + random.randint(-3, 3)
+                cy_el = (y1 + y2) / 2 + random.randint(-3, 3)
+                rx = (x2 - x1) / 2 + random.randint(-2, 2)
+                ry = (y2 - y1) / 2 + random.randint(-2, 2)
+                x = cx_el + rx * np.cos(angle)
+                y = cy_el + ry * np.sin(angle)
+                if random.random() > (0.2 if style == 'sketch' else 0.35):
+                    draw.ellipse([x-w//2, y-w//2, x+w//2, y+w//2], fill=color, outline=color)
+        
+        # Цвета карандаша
+        dark = (20, 20, 25)
+        medium = (60, 60, 70)
+        red = (160, 40, 40)
+        accent = random.choice([red, (200, 150, 50), (80, 80, 180)])
+        
+        # Рисуем фигуру в зависимости от типа SCP
+        if scp_type == 0:
+            # SCP-173
+            sketch_ellipse(cx-60, cy-100, cx+60, cy-20, dark, 4)
+            sketch_line(cx-70, cy-30, cx-70, cy+200, dark, 4)
+            sketch_line(cx-70, cy+200, cx+70, cy+200, dark, 4)
+            sketch_line(cx+70, cy+200, cx+70, cy-30, dark, 4)
+            sketch_line(cx-30, cy-70, cx+30, cy-70, accent, 3)
+            sketch_line(cx-30, cy-50, cx+30, cy-50, accent, 3)
+            sketch_line(cx, cy-80, cx, cy-40, accent, 3)
+            
+        elif scp_type == 1:
+            # SCP-049
+            sketch_line(cx-100, cy-20, cx-130, cy+250, dark, 4)
+            sketch_line(cx-130, cy+250, cx+130, cy+250, dark, 4)
+            sketch_line(cx+130, cy+250, cx+100, cy-20, dark, 4)
+            sketch_ellipse(cx-60, cy-130, cx+60, cy-10, dark, 4)
+            sketch_line(cx, cy-110, cx+70, cy-70, dark, 3)
+            sketch_line(cx+70, cy-70, cx, cy-30, dark, 3)
+            sketch_ellipse(cx-25, cy-95, cx-5, cy-80, accent, 2)
+            sketch_ellipse(cx+5, cy-95, cx+25, cy-80, accent, 2)
+            
+        elif scp_type == 2:
+            # SCP-096
+            sketch_line(cx-45, cy-20, cx-45, cy+270, dark, 3)
+            sketch_line(cx-45, cy+270, cx+45, cy+270, dark, 3)
+            sketch_line(cx+45, cy+270, cx+45, cy-20, dark, 3)
+            sketch_ellipse(cx-80, cy-90, cx+80, cy+10, dark, 4)
+            sketch_ellipse(cx-20, cy-55, cx-5, cy-40, medium, 2)
+            sketch_ellipse(cx+5, cy-55, cx+20, cy-40, medium, 2)
+            sketch_line(cx-45, cy+40, cx-110, cy+170, dark, 3)
+            sketch_line(cx+45, cy+40, cx+110, cy+170, dark, 3)
+            
+        elif scp_type == 3:
+            # SCP-106
+            sketch_line(cx-70, cy-10, cx-70, cy+240, dark, 4)
+            sketch_line(cx-70, cy+240, cx+70, cy+240, dark, 4)
+            sketch_line(cx+70, cy+240, cx+70, cy-10, dark, 4)
+            sketch_ellipse(cx-55, cy-100, cx+55, cy-5, dark, 4)
+            sketch_ellipse(cx-25, cy-75, cx-10, cy-60, accent, 2)
+            sketch_ellipse(cx+10, cy-75, cx+25, cy-60, accent, 2)
+            
+        else:
+            # SCP-682
+            sketch_line(cx-120, cy+100, cx-60, cy-50, dark, 5)
+            sketch_line(cx-60, cy-50, cx+60, cy-50, dark, 5)
+            sketch_line(cx+60, cy-50, cx+120, cy+100, dark, 5)
+            sketch_ellipse(cx-80, cy-130, cx+80, cy-30, dark, 4)
+            sketch_ellipse(cx-30, cy-100, cx-10, cy-80, accent, 3)
+            sketch_ellipse(cx+10, cy-100, cx+30, cy-80, accent, 3)
+            sketch_line(cx-50, cy-40, cx+50, cy-40, accent, 4)
+        
+        # 5. Добавляем тени и штриховку
+        for _ in range(100):
+            x = random.randint(50, width-50)
+            y = random.randint(50, height-50)
+            length = random.randint(5, 20)
+            angle = random.randint(0, 360)
+            dx = length * np.cos(angle)
+            dy = length * np.sin(angle)
+            draw.line([x, y, x+dx, y+dy], fill=(80, 80, 90), width=1)
+        
+        # 6. Виньетка
         mask = Image.new('L', (width, height), 255)
         mask_draw = ImageDraw.Draw(mask)
         mask_draw.ellipse([80, 80, width-80, height-80], fill=200)
         mask_draw.ellipse([180, 180, width-180, height-180], fill=255)
         enhancer = ImageEnhance.Brightness(img)
-        img.paste(enhancer.enhance(0.6), mask=mask)
+        img.paste(enhancer.enhance(0.5), mask=mask)
+        
+        # 7. Лёгкое размытие (эффект мягкого карандаша)
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.4))
+        
         return img
 
-# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ И КЛЮЧЕВЫХ СЛОВ ====================
+# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
 class ScriptGenerator:
     def generate_script(self, scp_data: dict) -> dict:
         scenes = [
-            {"keywords": f"{scp_data['name']} dark atmosphere horror", "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.", "duration": 7},
-            {"keywords": f"{scp_data['name']} close up details", "voice_text": f"{scp_data['text']}", "duration": 8},
-            {"keywords": f"{scp_data['name']} creepy movement", "voice_text": "Оно двигается. Не как человек. Слишком плавно.", "duration": 7},
-            {"keywords": f"{scp_data['name']} shadows horror", "voice_text": "Я слышал голоса. Они звали меня по имени.", "duration": 7},
-            {"keywords": f"{scp_data['name']} scary eyes", "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
-            {"keywords": f"{scp_data['name']} behind you", "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
+            {"voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.", "duration": 7},
+            {"voice_text": f"{scp_data['text']}", "duration": 8},
+            {"voice_text": "Оно двигается. Не как человек. Слишком плавно.", "duration": 7},
+            {"voice_text": "Я слышал голоса. Они звали меня по имени.", "duration": 7},
+            {"voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
+            {"voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
         ]
         return {
             "title": f"SCP-{scp_data['number']} | {scp_data['name']}",
@@ -190,36 +211,23 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
-# ==================== ГЕНЕРАТОР КАДРОВ (с поиском) ====================
+# ==================== ГЕНЕРАТОР КАДРОВ ====================
 class ImageGenerator:
-    def __init__(self, searcher: ImageSearcher):
-        self.searcher = searcher
-    
     def generate_frames(self, script: dict) -> list:
         frames = []
         total = len(script['scenes'])
-        
+        scp = script['scp_data']
         for i, scene in enumerate(script['scenes']):
-            st.text(f"   🔍 Поиск кадра {i+1}/{total}: '{scene['keywords']}'...")
-            
-            # Ищем изображение
-            urls = self.searcher.search(scene['keywords'], per_page=1)
+            st.text(f"   ✏️ Рисование кадра {i+1}/{total}...")
+            img = AdvancedSketchGenerator.create_scene(
+                seed=i + int(scp['number']),
+                scp_data=scp,
+                scene_index=i,
+                total_scenes=total
+            )
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
-            
-            if urls:
-                # Скачиваем первое изображение
-                success = self.searcher.download_image(urls[0], frame_path)
-                if not success:
-                    # Если скачать не удалось, создаём заглушку
-                    img = self.searcher.create_fallback_image(i + int(script['scp_number']))
-                    img.save(frame_path)
-            else:
-                # Если поиск не дал результатов, создаём заглушку
-                img = self.searcher.create_fallback_image(i + int(script['scp_number']))
-                img.save(frame_path)
-            
+            img.save(frame_path)
             frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
-        
         return frames
 
 # ==================== ОЗВУЧКА ====================
@@ -300,9 +308,9 @@ class VideoGenerator:
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
-    def __init__(self, searcher: ImageSearcher):
+    def __init__(self):
         self.script_gen = ScriptGenerator()
-        self.image_gen = ImageGenerator(searcher)
+        self.image_gen = ImageGenerator()
         self.voice_gen = VoiceGenerator()
         self.video_gen = VideoGenerator()
         self.videos_created = []
@@ -320,7 +328,7 @@ class SCPBot:
             try:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
-                self._add_status("🔍 Поиск изображений в интернете...")
+                self._add_status("✏️ Рисование кадров...")
                 frames = self.image_gen.generate_frames(script)
                 self._add_status(f"   ✅ {len(frames)} кадров")
                 self._add_status("🎤 Озвучка...")
@@ -356,24 +364,17 @@ class SCPBot:
 
 # ==================== STREAMLIT UI ====================
 def main():
-    st.set_page_config(page_title="SCP Video Bot (Internet Search)", page_icon="🌐", layout="wide")
-    st.title("🌐 SCP Video Bot — поиск кадров в интернете")
-    st.markdown("Автоматически ищет изображения по сценарию и собирает видео")
+    st.set_page_config(page_title="SCP Sketch Video Bot", page_icon="✏️", layout="wide")
+    st.title("✏️ SCP Sketch Video Bot (автономный)")
+    st.markdown("Создаёт видео из рисованных кадров (без внешних API)")
     st.markdown("---")
-    
-    # Инициализируем поисковик
-    searcher = ImageSearcher(CONFIG['unsplash_key'])
     
     with st.sidebar:
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("🔍 Поиск через Unsplash (бесплатно)")
-        if CONFIG['unsplash_key']:
-            st.success("✅ Ключ установлен (5000 запросов/час)")
-        else:
-            st.warning("⚠️ Без ключа — 50 запросов/час")
-            st.markdown("Получите бесплатный ключ на [unsplash.com](https://unsplash.com/developers)")
+        st.info("✏️ Используются рисованные скетчи")
+        st.info("🎨 Каждый кадр уникален (рандомные вариации)")
         st.info("⏱️ ~1-2 минуты на видео")
         st.markdown("---")
         if st.button("🗑️ Очистить временные файлы"):
@@ -386,9 +387,9 @@ def main():
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🌐 Сгенерировать видео", type="primary", use_container_width=True):
-            with st.spinner("Поиск и сборка видео..."):
-                bot = SCPBot(searcher)
+        if st.button("✏️ Сгенерировать видео", type="primary", use_container_width=True):
+            with st.spinner("Генерация видео..."):
+                bot = SCPBot()
                 videos = bot.run(count=count)
                 st.subheader("📊 Лог работы")
                 for msg in bot.status_messages:
