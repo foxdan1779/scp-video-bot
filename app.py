@@ -42,57 +42,57 @@ SCP_DATABASE = [
         "number": "173",
         "name": "Скульптура",
         "author": "М. Роджерс",
-        "appearance": "Бетонная статуя с лицом в виде красного иероглифа, без рук и ног",
+        "appearance": "Бетонная статуя с лицом в виде красного иероглифа",
         "text": "SCP-173 - это статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
     },
     {
         "number": "049",
         "name": "Чумной доктор",
         "author": "Габриэль",
-        "appearance": "Гуманоид в средневековом костюме чумного доктора с клювовидной маской",
-        "text": "SCP-049 - гуманоид, который считает себя врачом. Он пытается 'лечить' людей."
+        "appearance": "Гуманоид в средневековом костюме чумного доктора",
+        "text": "SCP-049 - гуманоид, который считает себя врачом."
     },
     {
         "number": "096",
         "name": "Застенчивый парень",
         "author": "Доктор Дэн",
-        "appearance": "Высокое, неестественно худое существо с белой кожей и огромными челюстями",
+        "appearance": "Высокое, неестественно худое существо с белой кожей",
         "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."
     },
     {
         "number": "106",
         "name": "Старый человек",
         "author": "Доктор Гирс",
-        "appearance": "Гуманоид с гниющей кожей, покрытой коррозией, в старом военном обмундировании",
+        "appearance": "Гуманоид с гниющей кожей, в старом военном обмундировании",
         "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."
     },
     {
         "number": "682",
         "name": "Трудный для уничтожения ящер",
         "author": "Доктор Гирс",
-        "appearance": "Крупное рептилоидное существо с невероятной регенерацией, покрытое шрамами",
-        "text": "SCP-682 - огромная рептилия, которая не умирает. Фонд пытался уничтожить её сотнями способов."
+        "appearance": "Крупное рептилоидное существо с шрамами",
+        "text": "SCP-682 - огромная рептилия, которая не умирает."
     },
     {
         "number": "999",
         "name": "Щекочущий монстр",
         "author": "Доктор Кейн",
-        "appearance": "Желейное существо оранжевого цвета, похожее на слизь, с улыбающимся лицом",
-        "text": "SCP-999 - дружелюбное существо, которое щекочет людей и вызывает у них эйфорию."
+        "appearance": "Желейное существо оранжевого цвета",
+        "text": "SCP-999 - дружелюбное существо, которое щекочет людей."
     },
     {
         "number": "087",
         "name": "Лестница в подвал",
         "author": "Доктор У. Уилсон",
-        "appearance": "Тёмная лестница, ведущая в подвал, на которой слышны шаги и плач ребёнка",
+        "appearance": "Тёмная лестница, ведущая в подвал",
         "text": "SCP-087 - бесконечная лестница. На каждом уровне слышен плач ребёнка."
     },
     {
         "number": "3000",
         "name": "Анаджвари",
         "author": "Доктор В. Д.",
-        "appearance": "Огромный морской змей с раздвоенным хвостом, обитающий на дне океана",
-        "text": "SCP-3000 - гигантский змей, который питается воспоминаниями людей."
+        "appearance": "Огромный морской змей с раздвоенным хвостом",
+        "text": "SCP-3000 - гигантский змей, который питается воспоминаниями."
     }
 ]
 
@@ -104,41 +104,6 @@ CONFIG = {
 
 for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
     Path(folder).mkdir(parents=True, exist_ok=True)
-
-# ==================== UNSPLASH API (БЕСПЛАТНО) ====================
-class UnsplashBackgrounds:
-    """Скачивает реальные фоны из Unsplash"""
-    
-    # Бесплатные изображения для фонов (прямые ссылки на изображения)
-    BACKGROUNDS = [
-        "https://images.unsplash.com/photo-1519120944692-1a8d8cfc107f?w=720&h=1280&fit=crop",  # тёмный коридор
-        "https://images.unsplash.com/photo-1546013868-3ae4def4b1f9?w=720&h=1280&fit=crop",  # старая лестница
-        "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=720&h=1280&fit=crop",  # тёмная комната
-        "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=720&h=1280&fit=crop",  # тёмный коридор
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=720&h=1280&fit=crop",  # ночь
-        "https://images.unsplash.com/photo-1532272691065-bcfd22a0ab07?w=720&h=1280&fit=crop",  # заброшенное здание
-        "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=720&h=1280&fit=crop",  # тёмное поле
-        "https://images.unsplash.com/photo-1487621167305-5d248087c724?w=720&h=1280&fit=crop",  # тёмный лес
-        "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=720&h=1280&fit=crop",  # туман
-        "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=720&h=1280&fit=crop",  # тёмное озеро
-    ]
-    
-    @classmethod
-    def get_background(cls, seed: int) -> Image.Image:
-        """Получает случайный фон из Unsplash"""
-        url = cls.BACKGROUNDS[seed % len(cls.BACKGROUNDS)]
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                img = Image.open(io.BytesIO(response.content))
-                # Приводим к нужному размеру
-                img = img.resize((720, 1280), PILImage.LANCZOS)
-                return img
-        except Exception as e:
-            print(f"Ошибка загрузки фона: {e}")
-        
-        # Если не загрузилось - создаём тёмный фон
-        return Image.new('RGB', (720, 1280), color=(8, 8, 12))
 
 # ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
 class ScriptGenerator:
@@ -179,142 +144,247 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
-# ==================== ГЕНЕРАТОР КАРТИНОК С ФОНАМИ ====================
-class ImageGenerator:
-    def generate_frames(self, script: dict) -> list:
-        frames = []
-        scp_data = script['scp_data']
-        
-        for i, scene in enumerate(script['scenes']):
-            frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
-            self._create_realistic_image(frame_path, i, scp_data)
-            frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
-        return frames
+# ==================== ГЕНЕРАТОР РИСОВАННЫХ КАДРОВ ====================
+class SketchGenerator:
+    """Генерирует изображения в стиле карандашного скетча"""
     
-    def _create_realistic_image(self, path: str, seed: int, scp_data: dict):
-        """Создаёт изображение с реальным фоном и нарисованным персонажем"""
+    @staticmethod
+    def create_sketch_background(width: int, height: int, seed: int) -> Image.Image:
+        """Создаёт фон в стиле бумаги для скетча"""
         
-        width, height = 720, 1280
+        random.seed(seed)
         
-        # 1. Скачиваем реальный фон
-        img = UnsplashBackgrounds.get_background(seed + int(scp_data['number']))
-        img = img.resize((width, height))
+        # Бумажный фон (немного кремовый)
+        img = Image.new('RGB', (width, height), color=(240, 235, 225))
+        draw = ImageDraw.Draw(img)
         
-        # 2. Превращаем в мрачный стиль (чёрно-белое + зерно)
-        img = img.convert('L')  # Чёрно-белое
-        img = img.convert('RGB')
-        
-        # 3. Добавляем зернистость
-        pixels = img.load()
-        for _ in range(3000):
+        # Добавляем текстуру бумаги (мелкие точки и линии)
+        for _ in range(5000):
             x = random.randint(0, width-1)
             y = random.randint(0, height-1)
+            brightness = random.randint(200, 240)
             try:
-                r, g, b = pixels[x, y]
-                noise = random.randint(-20, 20)
-                pixels[x, y] = (min(255, max(0, r+noise)), min(255, max(0, g+noise)), min(255, max(0, b+noise)))
+                draw.point((x, y), fill=(brightness, brightness-5, brightness-10))
             except:
                 pass
         
-        # 4. Добавляем тёмную виньетку
+        # Лёгкие полосы как у старой бумаги
+        for _ in range(20):
+            y = random.randint(0, height-1)
+            x1 = random.randint(0, width-1)
+            x2 = random.randint(0, width-1)
+            draw.line([x1, y, x2, y], fill=(200, 195, 185), width=1)
+        
+        # Тёмная виньетка по краям
         mask = Image.new('L', (width, height), 255)
         mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse([80, 80, width-80, height-80], fill=200)
+        mask_draw.ellipse([50, 50, width-50, height-50], fill=200)
         mask_draw.ellipse([150, 150, width-150, height-150], fill=255)
         enhancer = ImageEnhance.Brightness(img)
-        img.paste(enhancer.enhance(0.5), mask=mask)
+        img.paste(enhancer.enhance(0.7), mask=mask)
         
-        # 5. Рисуем персонажа СКЕТЧЕМ поверх фона
-        draw = ImageDraw.Draw(img)
-        cx, cy = width//2, height//2 - 50
+        return img
+    
+    @staticmethod
+    def draw_sketch_character(draw: ImageDraw.Draw, cx: int, cy: int, scp_type: int, seed: int):
+        """Рисует персонажа в стиле карандашного скетча"""
         
-        random.seed(seed + int(scp_data['number']) + 100)
-        scp_type = int(scp_data['number']) % 5
+        random.seed(seed + 100)
         
-        # Выбираем цвет для скетча (белый/серый на тёмном фоне)
-        color_main = (200, 200, 210)
-        color_outline = (150, 150, 160)
-        color_eyes = (180, 30, 30)  # Красные глаза
+        # Цвета для скетча (как карандаш)
+        pencil_dark = (30, 30, 35)
+        pencil_medium = (60, 60, 65)
+        pencil_light = (100, 100, 105)
+        pencil_red = (120, 30, 30)
+        
+        # Толщина линий (как карандаш разной степени нажима)
+        stroke_weight = random.randint(3, 5)
+        
+        # Рисуем персонажа прерывистыми линиями (эффект скетча)
+        def sketch_line(x1, y1, x2, y2, color, width):
+            """Рисует линию с эффектом скетча (прерывистую)"""
+            steps = max(10, int(((x2-x1)**2 + (y2-y1)**2)**0.5) // 5)
+            for i in range(steps):
+                t = i / steps
+                x = x1 + (x2 - x1) * t
+                y = y1 + (y2 - y1) * t
+                if random.random() > 0.15:  # 15% пропусков (прерывистость)
+                    draw.ellipse([x-width//2, y-width//2, x+width//2, y+width//2], 
+                                fill=color, outline=color)
+        
+        def sketch_ellipse(x1, y1, x2, y2, color, width):
+            """Рисует эллипс прерывистыми линиями"""
+            steps = 60
+            for i in range(steps):
+                angle = 2 * 3.14159 * i / steps
+                cx_el = (x1 + x2) / 2
+                cy_el = (y1 + y2) / 2
+                rx = (x2 - x1) / 2
+                ry = (y2 - y1) / 2
+                x = cx_el + rx * np.cos(angle)
+                y = cy_el + ry * np.sin(angle)
+                if random.random() > 0.15:
+                    draw.ellipse([x-width//2, y-width//2, x+width//2, y+width//2], 
+                                fill=color, outline=color)
         
         if scp_type == 0:
-            # SCP-173: Статуя (только контуры)
-            # Тело (прямоугольник с закруглениями)
-            draw.rectangle([cx-80, cy-40, cx+80, cy+220], outline=color_main, width=4)
-            # Голова (круг)
-            draw.ellipse([cx-65, cy-120, cx+65, cy-20], outline=color_main, width=4)
+            # SCP-173: Статуя (скетч)
+            # Тело (неровный прямоугольник)
+            points = [
+                (cx-85, cy-50 + random.randint(-5, 5)),
+                (cx-85 + random.randint(-5, 5), cy+230),
+                (cx+85 + random.randint(-5, 5), cy+230),
+                (cx+85, cy-50 + random.randint(-5, 5))
+            ]
+            for i in range(4):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1) % 4]
+                sketch_line(x1, y1, x2, y2, pencil_dark, stroke_weight)
+            
+            # Голова (неровный круг)
+            sketch_ellipse(cx-70, cy-130, cx+70, cy-20, pencil_dark, stroke_weight)
+            
             # Иероглиф на лице
-            draw.rectangle([cx-35, cy-90, cx+35, cy-50], outline=color_eyes, width=3)
-            draw.line([cx-25, cy-70, cx+25, cy-70], fill=color_eyes, width=3)
-            draw.line([cx, cy-80, cx, cy-60], fill=color_eyes, width=3)
+            sketch_rectangle(cx-40, cy-90, cx+40, cy-50, pencil_red, stroke_weight-1)
+            sketch_line(cx-30, cy-70, cx+30, cy-70, pencil_red, stroke_weight-1)
+            sketch_line(cx, cy-80, cx, cy-60, pencil_red, stroke_weight-1)
             
         elif scp_type == 1:
-            # SCP-049: Чумной доктор (только контуры)
+            # SCP-049: Чумной доктор (скетч)
             # Плащ
-            draw.polygon([(cx-90, cy-30), (cx+90, cy-30), (cx+120, cy+250), (cx-120, cy+250)], 
-                        outline=color_main, width=3)
+            points = [
+                (cx-95, cy-30 + random.randint(-5, 5)),
+                (cx+95, cy-30 + random.randint(-5, 5)),
+                (cx+125, cy+250 + random.randint(-5, 5)),
+                (cx-125, cy+250 + random.randint(-5, 5))
+            ]
+            for i in range(4):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1) % 4]
+                sketch_line(x1, y1, x2, y2, pencil_dark, stroke_weight+1)
+            
             # Голова с маской
-            draw.ellipse([cx-55, cy-130, cx+55, cy-10], outline=color_main, width=3)
+            sketch_ellipse(cx-60, cy-135, cx+60, cy-10, pencil_dark, stroke_weight)
             # Клюв
-            draw.polygon([(cx, cy-110), (cx+65, cy-70), (cx, cy-30)], outline=color_main, width=3)
+            points = [(cx, cy-115), (cx+70, cy-75), (cx, cy-35)]
+            for i in range(3):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1) % 3]
+                sketch_line(x1, y1, x2, y2, pencil_dark, stroke_weight-1)
             # Глаза
-            draw.ellipse([cx-20, cy-90, cx-5, cy-75], outline=color_eyes, width=2)
-            draw.ellipse([cx+5, cy-90, cx+20, cy-75], outline=color_eyes, width=2)
+            sketch_ellipse(cx-25, cy-95, cx-5, cy-80, pencil_red, stroke_weight-1)
+            sketch_ellipse(cx+5, cy-95, cx+25, cy-80, pencil_red, stroke_weight-1)
             
         elif scp_type == 2:
-            # SCP-096: Застенчивый парень (только контуры)
-            # Тело (вытянутое)
-            draw.rectangle([cx-45, cy-20, cx+45, cy+260], outline=color_main, width=4)
-            # Голова с челюстями
-            draw.ellipse([cx-80, cy-90, cx+80, cy+10], outline=color_main, width=4)
-            # Глаза (маленькие)
-            draw.ellipse([cx-15, cy-50, cx-5, cy-40], outline=color_outline, width=2)
-            draw.ellipse([cx+5, cy-50, cx+15, cy-40], outline=color_outline, width=2)
+            # SCP-096: Застенчивый парень (скетч)
+            # Худое тело
+            points = [
+                (cx-50 + random.randint(-5, 5), cy-20),
+                (cx-50 + random.randint(-5, 5), cy+270),
+                (cx+50 + random.randint(-5, 5), cy+270),
+                (cx+50 + random.randint(-5, 5), cy-20)
+            ]
+            for i in range(4):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1) % 4]
+                sketch_line(x1, y1, x2, y2, pencil_dark, stroke_weight)
+            
+            # Огромные челюсти
+            sketch_ellipse(cx-85, cy-95, cx+85, cy+15, pencil_dark, stroke_weight)
+            # Глаза
+            sketch_ellipse(cx-18, cy-55, cx-5, cy-45, pencil_medium, stroke_weight-1)
+            sketch_ellipse(cx+5, cy-55, cx+18, cy-45, pencil_medium, stroke_weight-1)
             # Длинные руки
-            draw.line([cx-45, cy+40, cx-110, cy+170], fill=color_main, width=4)
-            draw.line([cx+45, cy+40, cx+110, cy+170], fill=color_main, width=4)
+            sketch_line(cx-50, cy+50, cx-115, cy+175, pencil_dark, stroke_weight-1)
+            sketch_line(cx+50, cy+50, cx+115, cy+175, pencil_dark, stroke_weight-1)
             
         elif scp_type == 3:
-            # SCP-106: Старый человек (только контуры)
-            # Тело (разрушенное)
-            draw.rectangle([cx-70, cy-10, cx+70, cy+240], outline=color_main, width=3)
-            # Голова
-            draw.ellipse([cx-55, cy-100, cx+55, cy-5], outline=color_main, width=3)
-            # Глаза-дыры
-            draw.ellipse([cx-25, cy-70, cx-10, cy-55], outline=color_outline, width=2)
-            draw.ellipse([cx+10, cy-70, cx+25, cy-55], outline=color_outline, width=2)
+            # SCP-106: Старый человек (скетч)
+            points = [
+                (cx-75 + random.randint(-5, 5), cy-10),
+                (cx-75 + random.randint(-5, 5), cy+245),
+                (cx+75 + random.randint(-5, 5), cy+245),
+                (cx+75 + random.randint(-5, 5), cy-10)
+            ]
+            for i in range(4):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1) % 4]
+                sketch_line(x1, y1, x2, y2, pencil_dark, stroke_weight)
+            
+            sketch_ellipse(cx-60, cy-105, cx+60, cy-5, pencil_dark, stroke_weight)
+            sketch_ellipse(cx-25, cy-75, cx-10, cy-60, pencil_medium, stroke_weight-1)
+            sketch_ellipse(cx+10, cy-75, cx+25, cy-60, pencil_medium, stroke_weight-1)
+            
             # Коррозия (пятна)
             for _ in range(15):
                 rx = random.randint(cx-60, cx+60)
-                ry = random.randint(cy, cy+220)
-                draw.ellipse([rx-8, ry-10, rx+8, ry+10], outline=(100, 40, 40), width=2)
+                ry = random.randint(cy+10, cy+230)
+                sketch_ellipse(rx-10, ry-12, rx+10, ry+12, pencil_red, 2)
             
         else:
-            # SCP-682: Ящер (только контуры)
-            # Тело
-            draw.polygon([(cx-110, cy+90), (cx-50, cy-40), (cx+50, cy-40), (cx+110, cy+90)], 
-                        outline=color_main, width=4)
-            # Голова
-            draw.ellipse([cx-70, cy-110, cx+70, cy-20], outline=color_main, width=4)
-            # Глаза
-            draw.ellipse([cx-25, cy-80, cx-10, cy-65], outline=color_eyes, width=2)
-            draw.ellipse([cx+10, cy-80, cx+25, cy-65], outline=color_eyes, width=2)
-            # Пасть
-            draw.line([cx-45, cy-30, cx+45, cy-30], fill=color_eyes, width=4)
+            # SCP-682: Ящер (скетч)
+            points = [
+                (cx-115, cy+95),
+                (cx-55, cy-45),
+                (cx+55, cy-45),
+                (cx+115, cy+95)
+            ]
+            for i in range(4):
+                x1, y1 = points[i]
+                x2, y2 = points[(i+1) % 4]
+                sketch_line(x1, y1, x2, y2, pencil_dark, stroke_weight+1)
+            
+            sketch_ellipse(cx-75, cy-115, cx+75, cy-20, pencil_dark, stroke_weight)
+            sketch_ellipse(cx-25, cy-85, cx-10, cy-70, pencil_red, stroke_weight-1)
+            sketch_ellipse(cx+10, cy-85, cx+25, cy-70, pencil_red, stroke_weight-1)
+            sketch_line(cx-45, cy-35, cx+45, cy-35, pencil_red, stroke_weight)
+            
             # Шрамы
             for _ in range(6):
                 x1 = random.randint(cx-70, cx+70)
-                y1 = random.randint(cy-80, cy+70)
-                draw.line([x1, y1, x1+random.randint(-30, 30), y1+random.randint(-30, 30)], 
-                         fill=color_outline, width=2)
+                y1 = random.randint(cy-85, cy+75)
+                x2 = x1 + random.randint(-30, 30)
+                y2 = y1 + random.randint(-30, 30)
+                sketch_line(x1, y1, x2, y2, pencil_medium, 2)
+    
+    @classmethod
+    def create_frame(cls, seed: int, scp_data: dict) -> Image.Image:
+        """Создаёт полноценный кадр в стиле скетча"""
         
-        # 6. Добавляем эффект "старого кино" (полосы, царапины)
-        for _ in range(10):
+        width, height = 720, 1280
+        scp_type = int(scp_data['number']) % 5
+        
+        # 1. Создаём бумажный фон
+        img = cls.create_sketch_background(width, height, seed)
+        draw = ImageDraw.Draw(img)
+        
+        # 2. Рисуем персонажа
+        cx, cy = width//2, height//2 - 50
+        cls.draw_sketch_character(draw, cx, cy, scp_type, seed)
+        
+        # 3. Добавляем штриховку (как в скетчах)
+        for _ in range(100):
+            x = random.randint(50, width-50)
+            y = random.randint(50, height-50)
+            length = random.randint(5, 20)
+            angle = random.randint(0, 360)
+            dx = length * np.cos(angle)
+            dy = length * np.sin(angle)
+            draw.line([x, y, x+dx, y+dy], fill=(50, 50, 55), width=1)
+        
+        # 4. Добавляем немного "грязи" (как на старой бумаге)
+        for _ in range(100):
             x = random.randint(0, width-1)
             y = random.randint(0, height-1)
-            draw.line([x, y, x+random.randint(20, 100), y], fill=(50, 50, 50), width=1)
+            size = random.randint(1, 3)
+            brightness = random.randint(180, 210)
+            draw.ellipse([x-size, y-size, x+size, y+size], 
+                        fill=(brightness, brightness-5, brightness-10))
         
-        # 7. Сохраняем
-        img.save(path)
+        # 5. Добавляем лёгкое размытие (эффект мягкого карандаша)
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.3))
+        
+        return img
 
 # ==================== ОЗВУЧКА ====================
 class VoiceGenerator:
@@ -334,6 +404,19 @@ class VoiceGenerator:
             st.warning(f"Ошибка озвучки: {e}")
             return None
 
+# ==================== ГЕНЕРАТОР КАДРОВ ====================
+class ImageGenerator:
+    def generate_frames(self, script: dict) -> list:
+        frames = []
+        scp_data = script['scp_data']
+        
+        for i, scene in enumerate(script['scenes']):
+            frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
+            img = SketchGenerator.create_frame(i + int(scp_data['number']), scp_data)
+            img.save(frame_path)
+            frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
+        return frames
+
 # ==================== ВИДЕО-ГЕНЕРАТОР ====================
 class VideoGenerator:
     def create_video(self, frames: list, audio_path: str, script: dict) -> str:
@@ -344,14 +427,16 @@ class VideoGenerator:
                 clip = ImageClip(frame_data['path'])
                 clip = clip.resize(height=1280, width=720)
                 clip = clip.set_duration(frame_data['duration'])
+                # Добавляем лёгкое покачивание (эффект рисованной анимации)
+                clip = clip.resize(lambda t: 1 + 0.005 * np.sin(t))
                 clips.append(clip)
             except Exception as e:
                 st.warning(f"Ошибка клипа: {e}")
-                clip = ColorClip(size=(720, 1280), color=(0, 0, 0), duration=frame_data['duration'])
+                clip = ColorClip(size=(720, 1280), color=(240, 235, 225), duration=frame_data['duration'])
                 clips.append(clip)
         
         if not clips:
-            clip = ColorClip(size=(720, 1280), color=(0, 0, 0), duration=10)
+            clip = ColorClip(size=(720, 1280), color=(240, 235, 225), duration=10)
             clips.append(clip)
         
         final = concatenate_videoclips(clips, method="compose")
@@ -422,9 +507,9 @@ class SCPBot:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
                 
-                self._add_status("🎨 Кадры с реальными фонами...")
+                self._add_status("✏️ Рисование кадров в стиле скетч...")
                 frames = self.image_gen.generate_frames(script)
-                self._add_status(f"   ✅ {len(frames)} кадров")
+                self._add_status(f"   ✅ {len(frames)} кадров нарисовано")
                 
                 self._add_status("🎤 Озвучка...")
                 audio = self.voice_gen.generate_voice(script)
@@ -463,21 +548,22 @@ class SCPBot:
 # ==================== STREAMLIT UI ====================
 def main():
     st.set_page_config(
-        page_title="SCP Video Bot",
-        page_icon="🎬",
+        page_title="SCP Sketch Video Bot",
+        page_icon="✏️",
         layout="wide"
     )
     
-    st.title("🎬 SCP Video Generator")
-    st.markdown("Создаёт полноценные видео по SCP с реальными фонами")
+    st.title("✏️ SCP Sketch Video Generator")
+    st.markdown("Создаёт видео в стиле карандашного скетча (как Доктор Войд)")
     st.markdown("---")
     
     with st.sidebar:
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=8, value=1)
         st.markdown("---")
-        st.info("📸 Используются реальные фото из Unsplash")
-        st.info("✏️ Персонажи рисуются поверх в стиле скетч")
+        st.info("✏️ Стиль: карандашный скетч")
+        st.info("📄 Фон: бумага")
+        st.info("🎨 Персонажи: рисованные")
         st.info("⏱️ 1-2 минуты на видео")
         st.markdown("---")
         
@@ -492,8 +578,8 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        if st.button("🎬 Сгенерировать видео", type="primary", use_container_width=True):
-            with st.spinner("Генерация видео..."):
+        if st.button("✏️ Сгенерировать видео", type="primary", use_container_width=True):
+            with st.spinner("Рисование видео..."):
                 bot = SCPBot()
                 videos = bot.run(count=count)
                 
