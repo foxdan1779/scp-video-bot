@@ -5,4 +5,3 @@ numpy
 edge-tts
 requests
 googlesearch-python
-beautifulsoup4  # опционально, для запасного метода
