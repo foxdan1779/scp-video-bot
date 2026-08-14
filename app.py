@@ -103,26 +103,20 @@ SCP_DATABASE = [
 # ==================== ПОИСК ИЗОБРАЖЕНИЙ ЧЕРЕЗ GOOGLE ====================
 class ImageSearcher:
     def __init__(self):
-        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': self.user_agent})
+        self.session.headers.update({'User-Agent': 'Mozilla/5.0'})
     
     def search(self, query: str, max_results: int = 1) -> List[str]:
-        """Ищет изображения через Google и возвращает список URL"""
         urls = []
         try:
-            # Добавляем "image" для поиска картинок
             search_query = f"{query} image"
-            # Используем библиотеку googlesearch
-            for url in search(search_query, num_results=max_results * 3, lang='en', user_agent=self.user_agent):
-                # Фильтруем только прямые ссылки на изображения
+            for url in search(search_query, num_results=max_results * 3, lang='en'):
                 if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
                     urls.append(url)
                     if len(urls) >= max_results:
                         break
-            # Если не нашли, берём любые ссылки (могут быть страницы с картинками)
             if not urls:
-                for url in search(search_query, num_results=max_results * 3, lang='en', user_agent=self.user_agent):
+                for url in search(search_query, num_results=max_results * 3, lang='en'):
                     if 'img' in url or 'photo' in url or 'image' in url:
                         urls.append(url)
                         if len(urls) >= max_results:
@@ -133,7 +127,6 @@ class ImageSearcher:
     
     @staticmethod
     def download_image(url: str, save_path: str) -> bool:
-        """Скачивает изображение по URL"""
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             response = requests.get(url, headers=headers, timeout=15)
@@ -155,24 +148,20 @@ class ImageSearcher:
     
     @staticmethod
     def create_fallback_image(seed: int) -> Image.Image:
-        """Создаёт стилизованную заглушку (скетч)"""
         width, height = 720, 1280
         img = Image.new('RGB', (width, height), color=(240, 235, 225))
         draw = ImageDraw.Draw(img)
         random.seed(seed)
-        # Текстура бумаги
         for _ in range(1000):
             x = random.randint(0, width-1)
             y = random.randint(0, height-1)
             br = random.randint(200, 240)
             draw.point((x, y), fill=(br, br-5, br-10))
-        # Абстрактная фигура (скетч)
         cx, cy = width//2, height//2
         draw.rectangle([cx-100, cy-50, cx+100, cy+250], outline=(50, 50, 60), width=3)
         draw.ellipse([cx-80, cy-140, cx+80, cy-30], outline=(50, 50, 60), width=3)
         draw.ellipse([cx-30, cy-90, cx-10, cy-70], fill=(150, 40, 40))
         draw.ellipse([cx+10, cy-90, cx+30, cy-70], fill=(150, 40, 40))
-        # Виньетка
         mask = Image.new('L', (width, height), 255)
         mask_draw = ImageDraw.Draw(mask)
         mask_draw.ellipse([80, 80, width-80, height-80], fill=200)
@@ -235,7 +224,6 @@ class ImageGenerator:
         total = len(script['scenes'])
         for i, scene in enumerate(script['scenes']):
             st.text(f"   🔍 Поиск кадра {i+1}/{total}: '{scene['keywords']}'...")
-            # Ищем изображения
             urls = self.searcher.search(scene['keywords'], max_results=1)
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
             if urls:
