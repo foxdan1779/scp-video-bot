@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 import random
+import numpy as np  # <--- ЭТО ВАЖНО!
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import io
 
@@ -28,7 +29,6 @@ except ImportError:
     import edge_tts
 
 # ==================== ВСТРОЕННАЯ БАЗА SCP ====================
-# РИСОВАННЫЕ ИЗОБРАЖЕНИЯ В СТИЛЕ "ДОКТОР ВОЙД" (встроенные, без интернета)
 SCP_DATABASE = [
     {
         "number": "173",
@@ -79,6 +79,15 @@ SCP_DATABASE = [
         "text": "SCP-3000 - гигантский змей, который питается воспоминаниями."
     }
 ]
+
+# ==================== КОНФИГУРАЦИЯ ====================
+CONFIG = {
+    'output_dir': './videos',
+    'temp_dir': './temp'
+}
+
+for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
+    Path(folder).mkdir(parents=True, exist_ok=True)
 
 # ==================== ГЕНЕРАТОР РИСУНКОВ В СТИЛЕ "ДОКТОР ВОЙД" ====================
 class VoidSketchGenerator:
@@ -140,29 +149,27 @@ class VoidSketchGenerator:
         
         pencil_dark = (25, 25, 30)
         pencil_medium = (55, 55, 60)
-        pencil_light = (90, 90, 95)
         pencil_red = (140, 30, 30)
         
-        # В зависимости от SCP и сцены - разная поза
+        # В зависимости от SCP
         if scp_type == 0:
-            # SCP-173
-            sketch_rectangle = lambda x1,y1,x2,y2,color,w: sketch_line(x1,y1,x2,y1,color,w) or sketch_line(x2,y1,x2,y2,color,w) or sketch_line(x2,y2,x1,y2,color,w) or sketch_line(x1,y2,x1,y1,color,w)
-            # Тело
+            # SCP-173 - Статуя
             offset_x = random.randint(-10, 10)
             offset_y = random.randint(-5, 5)
+            # Тело
             sketch_line(cx-80+offset_x, cy-40+offset_y, cx-80+offset_x, cy+230+offset_y, pencil_dark, 4)
             sketch_line(cx-80+offset_x, cy+230+offset_y, cx+80+offset_x, cy+230+offset_y, pencil_dark, 4)
             sketch_line(cx+80+offset_x, cy+230+offset_y, cx+80+offset_x, cy-40+offset_y, pencil_dark, 4)
             sketch_line(cx+80+offset_x, cy-40+offset_y, cx-80+offset_x, cy-40+offset_y, pencil_dark, 4)
             # Голова
             sketch_ellipse(cx-70+offset_x, cy-130+offset_y, cx+70+offset_x, cy-20+offset_y, pencil_dark, 4)
-            # Лицо (иероглиф)
+            # Лицо
             sketch_line(cx-35+offset_x, cy-90+offset_y, cx+35+offset_x, cy-90+offset_y, pencil_red, 3)
             sketch_line(cx-35+offset_x, cy-70+offset_y, cx+35+offset_x, cy-70+offset_y, pencil_red, 3)
             sketch_line(cx+offset_x, cy-100+offset_y, cx+offset_x, cy-60+offset_y, pencil_red, 3)
             
         elif scp_type == 1:
-            # SCP-049
+            # SCP-049 - Чумной доктор
             # Плащ
             sketch_line(cx-100, cy-30, cx-130, cy+250, pencil_dark, 4)
             sketch_line(cx-130, cy+250, cx+130, cy+250, pencil_dark, 4)
@@ -177,7 +184,7 @@ class VoidSketchGenerator:
             sketch_ellipse(cx+5, cy-100, cx+25, cy-85, pencil_red, 2)
             
         elif scp_type == 2:
-            # SCP-096
+            # SCP-096 - Застенчивый парень
             # Тело
             sketch_line(cx-50, cy-30, cx-45, cy+270, pencil_dark, 3)
             sketch_line(cx-45, cy+270, cx+45, cy+270, pencil_dark, 3)
@@ -192,7 +199,7 @@ class VoidSketchGenerator:
             sketch_line(cx+48, cy+40, cx+120, cy+180, pencil_dark, 3)
             
         elif scp_type == 3:
-            # SCP-106
+            # SCP-106 - Старый человек
             # Тело
             sketch_line(cx-75, cy-20, cx-70, cy+240, pencil_dark, 4)
             sketch_line(cx-70, cy+240, cx+70, cy+240, pencil_dark, 4)
@@ -204,8 +211,8 @@ class VoidSketchGenerator:
             sketch_ellipse(cx+10, cy-80, cx+25, cy-65, pencil_medium, 2)
             
         else:
-            # SCP-682
-            # Тело (рептилия)
+            # SCP-682 - Ящер
+            # Тело
             sketch_line(cx-120, cy+100, cx-60, cy-50, pencil_dark, 5)
             sketch_line(cx-60, cy-50, cx+60, cy-50, pencil_dark, 5)
             sketch_line(cx+60, cy-50, cx+120, cy+100, pencil_dark, 5)
@@ -217,7 +224,7 @@ class VoidSketchGenerator:
             # Пасть
             sketch_line(cx-50, cy-40, cx+50, cy-40, pencil_red, 4)
         
-        # 5. Штриховка (добавляем объём)
+        # 5. Штриховка
         for _ in range(150):
             x = random.randint(100, width-100)
             y = random.randint(100, height-100)
@@ -227,7 +234,7 @@ class VoidSketchGenerator:
             dy = length * np.sin(angle)
             draw.line([x, y, x+dx, y+dy], fill=(60, 60, 65), width=1)
         
-        # 6. Эффект "грязного" скетча (пятна)
+        # 6. Пятна
         for _ in range(30):
             x = random.randint(0, width-1)
             y = random.randint(0, height-1)
@@ -240,15 +247,6 @@ class VoidSketchGenerator:
         img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
         
         return img
-
-# ==================== КОНФИГУРАЦИЯ ====================
-CONFIG = {
-    'output_dir': './videos',
-    'temp_dir': './temp'
-}
-
-for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
-    Path(folder).mkdir(parents=True, exist_ok=True)
 
 # ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
 class ScriptGenerator:
@@ -392,7 +390,7 @@ class SCPBot:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
                 
-                self._add_status("✏️ Рисование кадров в стиле Доктор Войд...")
+                self._add_status("✏️ Рисование кадров...")
                 frames = self.image_gen.generate_frames(script)
                 self._add_status(f"   ✅ {len(frames)} кадров")
                 
@@ -417,6 +415,8 @@ class SCPBot:
                 
             except Exception as e:
                 self._add_status(f"❌ Ошибка: {e}")
+                import traceback
+                self._add_status(traceback.format_exc())
         
         return self.videos_created
     
@@ -439,7 +439,7 @@ def main():
     )
     
     st.title("✏️ SCP Sketch Video Generator")
-    st.markdown("Создаёт видео в стиле рисованного скетча (как Доктор Войд)")
+    st.markdown("Создаёт видео в стиле рисованного скетча")
     st.markdown("---")
     
     with st.sidebar:
@@ -447,7 +447,6 @@ def main():
         count = st.number_input("Количество видео:", min_value=1, max_value=8, value=1)
         st.markdown("---")
         st.info("✏️ Стиль: рисованный скетч")
-        st.info("🎨 Стиль: как Доктор Войд")
         st.info("⏱️ 1-2 минуты на видео")
         st.markdown("---")
         
