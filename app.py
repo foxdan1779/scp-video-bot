@@ -6,7 +6,6 @@ import time
 import shutil
 import asyncio
 import requests
-import base64
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -37,35 +36,150 @@ except ImportError:
 CONFIG = {
     'output_dir': './videos',
     'temp_dir': './temp',
-    'replicate_token': 'r8_HHIJKMhVMN0vqXrSLQpWLMvN3ssqdHV1X7Hx0',  # 👈 ВСТАВЬТЕ СВОЙ ТОКЕН
-    'replicate_model': 'stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf'
+    'unsplash_key': ''  # Оставьте пустым для 50 запросов/час, или вставьте свой ключ
 }
 
 for folder in [CONFIG['output_dir'], CONFIG['temp_dir'], f"{CONFIG['temp_dir']}/images", f"{CONFIG['temp_dir']}/audio"]:
     Path(folder).mkdir(parents=True, exist_ok=True)
 
-# ==================== ВСТРОЕННАЯ БАЗА SCP ====================
+# ==================== БАЗА SCP (только текст) ====================
 SCP_DATABASE = [
-    {"number": "173", "name": "Скульптура", "author": "М. Роджерс", "text": "SCP-173 - статуя из бетона и арматуры."},
-    {"number": "049", "name": "Чумной доктор", "author": "Габриэль", "text": "SCP-049 - гуманоид, который считает себя врачом."},
-    {"number": "096", "name": "Застенчивый парень", "author": "Доктор Дэн", "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."},
-    {"number": "106", "name": "Старый человек", "author": "Доктор Гирс", "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."},
-    {"number": "682", "name": "Трудный для уничтожения ящер", "author": "Доктор Гирс", "text": "SCP-682 - огромная рептилия, которая не умирает."},
-    {"number": "999", "name": "Щекочущий монстр", "author": "Доктор Кейн", "text": "SCP-999 - дружелюбное существо, которое щекочет людей."},
-    {"number": "087", "name": "Лестница в подвал", "author": "Доктор У. Уилсон", "text": "SCP-087 - бесконечная лестница."},
-    {"number": "3000", "name": "Анаджвари", "author": "Доктор В. Д.", "text": "SCP-3000 - гигантский змей."}
+    {
+        "number": "173",
+        "name": "Скульптура",
+        "author": "М. Роджерс",
+        "text": "SCP-173 - статуя из бетона и арматуры. Она неподвижна, когда на неё смотрят."
+    },
+    {
+        "number": "049",
+        "name": "Чумной доктор",
+        "author": "Габриэль",
+        "text": "SCP-049 - гуманоид, который считает себя врачом."
+    },
+    {
+        "number": "096",
+        "name": "Застенчивый парень",
+        "author": "Доктор Дэн",
+        "text": "SCP-096 - существо, которое не переносит, когда на него смотрят."
+    },
+    {
+        "number": "106",
+        "name": "Старый человек",
+        "author": "Доктор Гирс",
+        "text": "SCP-106 - гуманоид, который может проходить сквозь твёрдые материалы."
+    },
+    {
+        "number": "682",
+        "name": "Трудный для уничтожения ящер",
+        "author": "Доктор Гирс",
+        "text": "SCP-682 - огромная рептилия, которая не умирает."
+    },
+    {
+        "number": "999",
+        "name": "Щекочущий монстр",
+        "author": "Доктор Кейн",
+        "text": "SCP-999 - дружелюбное существо, которое щекочет людей."
+    },
+    {
+        "number": "087",
+        "name": "Лестница в подвал",
+        "author": "Доктор У. Уилсон",
+        "text": "SCP-087 - бесконечная лестница."
+    },
+    {
+        "number": "3000",
+        "name": "Анаджвари",
+        "author": "Доктор В. Д.",
+        "text": "SCP-3000 - гигантский змей."
+    }
 ]
 
-# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ ====================
+# ==================== ПОИСК ИЗОБРАЖЕНИЙ В ИНТЕРНЕТЕ ====================
+class ImageSearcher:
+    def __init__(self, api_key: str = ""):
+        self.api_key = api_key
+        self.base_url = "https://api.unsplash.com/search/photos"
+        self.headers = {"Authorization": f"Client-ID {api_key}"} if api_key else {}
+    
+    def search(self, query: str, per_page: int = 1) -> List[str]:
+        """Ищет изображения по запросу и возвращает список URL"""
+        params = {
+            "query": query,
+            "per_page": per_page,
+            "orientation": "portrait"  # Для вертикальных видео
+        }
+        try:
+            response = requests.get(self.base_url, headers=self.headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                urls = [result['urls']['regular'] for result in data.get('results', [])]
+                return urls
+            elif response.status_code == 403 and "rate limit" in response.text.lower():
+                st.warning("⚠️ Превышен лимит запросов Unsplash (50/час). Использую заглушки.")
+                return []
+            else:
+                st.warning(f"Ошибка поиска: {response.status_code}")
+                return []
+        except Exception as e:
+            st.warning(f"Ошибка соединения: {e}")
+            return []
+    
+    @staticmethod
+    def download_image(url: str, save_path: str) -> bool:
+        """Скачивает изображение по URL"""
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                img = Image.open(io.BytesIO(response.content))
+                # Приводим к вертикальному формату
+                width, height = img.size
+                if width > height:
+                    crop = height
+                    left = (width - crop) // 2
+                    img = img.crop((left, 0, left + crop, height))
+                img = img.resize((720, 1280), Image.LANCZOS)
+                img.save(save_path)
+                return True
+        except Exception as e:
+            print(f"Ошибка скачивания: {e}")
+        return False
+    
+    @staticmethod
+    def create_fallback_image(seed: int) -> Image.Image:
+        """Заглушка (скетч) если поиск не дал результатов"""
+        width, height = 720, 1280
+        img = Image.new('RGB', (width, height), color=(240, 235, 225))
+        draw = ImageDraw.Draw(img)
+        random.seed(seed)
+        for _ in range(1000):
+            x = random.randint(0, width-1)
+            y = random.randint(0, height-1)
+            br = random.randint(200, 240)
+            draw.point((x, y), fill=(br, br-5, br-10))
+        # Рисуем абстрактную фигуру (скетч)
+        cx, cy = width//2, height//2
+        draw.rectangle([cx-100, cy-50, cx+100, cy+250], outline=(50, 50, 60), width=3)
+        draw.ellipse([cx-80, cy-140, cx+80, cy-30], outline=(50, 50, 60), width=3)
+        draw.ellipse([cx-30, cy-90, cx-10, cy-70], fill=(150, 40, 40))
+        draw.ellipse([cx+10, cy-90, cx+30, cy-70], fill=(150, 40, 40))
+        mask = Image.new('L', (width, height), 255)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse([80, 80, width-80, height-80], fill=200)
+        mask_draw.ellipse([180, 180, width-180, height-180], fill=255)
+        enhancer = ImageEnhance.Brightness(img)
+        img.paste(enhancer.enhance(0.6), mask=mask)
+        return img
+
+# ==================== ГЕНЕРАТОР СЦЕНАРИЕВ И КЛЮЧЕВЫХ СЛОВ ====================
 class ScriptGenerator:
     def generate_script(self, scp_data: dict) -> dict:
         scenes = [
-            {"prompt": f"{scp_data['name']}, dark horror atmosphere, sketch style, гротеск, мрачный", "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.", "duration": 7},
-            {"prompt": f"{scp_data['name']}, close up, detailed, horror sketch, угольный рисунок", "voice_text": f"{scp_data['text']}", "duration": 8},
-            {"prompt": f"{scp_data['name']}, movement, dynamic, scary, sketch", "voice_text": "Оно двигается. Не как человек. Слишком плавно.", "duration": 7},
-            {"prompt": f"{scp_data['name']}, in the dark, shadows, horror art, гротеск", "voice_text": "Я слышал голоса. Они звали меня по имени.", "duration": 7},
-            {"prompt": f"{scp_data['name']}, looking at viewer, scary eyes, sketch", "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
-            {"prompt": f"{scp_data['name']}, behind the viewer, horror, dark, скетч", "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
+            {"keywords": f"{scp_data['name']} dark atmosphere horror", "voice_text": f"Я нашёл это в старом архиве. SCP-{scp_data['number']} - {scp_data['name']}.", "duration": 7},
+            {"keywords": f"{scp_data['name']} close up details", "voice_text": f"{scp_data['text']}", "duration": 8},
+            {"keywords": f"{scp_data['name']} creepy movement", "voice_text": "Оно двигается. Не как человек. Слишком плавно.", "duration": 7},
+            {"keywords": f"{scp_data['name']} shadows horror", "voice_text": "Я слышал голоса. Они звали меня по имени.", "duration": 7},
+            {"keywords": f"{scp_data['name']} scary eyes", "voice_text": "Оно знает, что я здесь. Оно смотрит прямо на меня.", "duration": 7},
+            {"keywords": f"{scp_data['name']} behind you", "voice_text": "Я закрыл глаза. Но когда открыл... оно стояло прямо за мной.", "duration": 7}
         ]
         return {
             "title": f"SCP-{scp_data['number']} | {scp_data['name']}",
@@ -76,92 +190,34 @@ class ScriptGenerator:
             "scp_data": scp_data
         }
 
-# ==================== REPLICATE API ====================
-class ReplicateGenerator:
-    def __init__(self, token: str, model: str):
-        self.token = token
-        self.model = model
-        self.api_url = "https://api.replicate.com/v1/predictions"
-        self.headers = {
-            "Authorization": f"Token {token}",
-            "Content-Type": "application/json"
-        }
-    
-    def generate_image(self, prompt: str, negative_prompt: str = "") -> Image.Image:
-        """Генерирует изображение через Replicate API"""
-        
-        # Формируем запрос
-        payload = {
-            "version": self.model,
-            "input": {
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "num_inference_steps": 25,
-                "guidance_scale": 7.5,
-                "width": 512,
-                "height": 768
-            }
-        }
-        
-        try:
-            # 1. Запускаем предсказание
-            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=30)
-            if response.status_code != 201:
-                st.error(f"Ошибка запуска: {response.status_code} - {response.text}")
-                return self._fallback_image()
-            
-            prediction = response.json()
-            prediction_id = prediction['id']
-            
-            # 2. Ждём завершения (polling)
-            status_url = f"{self.api_url}/{prediction_id}"
-            for _ in range(30):  # ~30 секунд
-                time.sleep(2)
-                status_response = requests.get(status_url, headers=self.headers)
-                if status_response.status_code == 200:
-                    status_data = status_response.json()
-                    if status_data['status'] == 'succeeded':
-                        # Получаем URL изображения
-                        image_url = status_data['output'][0]
-                        img_response = requests.get(image_url)
-                        if img_response.status_code == 200:
-                            img = Image.open(io.BytesIO(img_response.content))
-                            return img
-                        else:
-                            break
-                    elif status_data['status'] == 'failed':
-                        st.error(f"Ошибка генерации: {status_data.get('error', 'неизвестная ошибка')}")
-                        break
-                else:
-                    break
-            
-            # Если не дождались или ошибка
-            return self._fallback_image()
-            
-        except Exception as e:
-            st.error(f"Ошибка API: {e}")
-            return self._fallback_image()
-    
-    def _fallback_image(self) -> Image.Image:
-        img = Image.new('RGB', (512, 768), color=(20, 20, 30))
-        return img
-
-# ==================== ГЕНЕРАТОР КАДРОВ ====================
+# ==================== ГЕНЕРАТОР КАДРОВ (с поиском) ====================
 class ImageGenerator:
-    def __init__(self, api: ReplicateGenerator):
-        self.api = api
+    def __init__(self, searcher: ImageSearcher):
+        self.searcher = searcher
     
     def generate_frames(self, script: dict) -> list:
         frames = []
         total = len(script['scenes'])
         
         for i, scene in enumerate(script['scenes']):
-            st.text(f"   🎨 Генерация кадра {i+1}/{total}...")
-            prompt = f"{scene['prompt']}, стиль Доктор Войд, гротескный скетч, угольный рисунок, экспрессионизм, мрачный хоррор, черно-белое с красными акцентами"
-            negative_prompt = "фотореализм, фотография, глянец, мультяшность, аниме, цветное, яркое, реализм"
-            img = self.api.generate_image(prompt, negative_prompt)
+            st.text(f"   🔍 Поиск кадра {i+1}/{total}: '{scene['keywords']}'...")
+            
+            # Ищем изображение
+            urls = self.searcher.search(scene['keywords'], per_page=1)
             frame_path = f"{CONFIG['temp_dir']}/images/frame_{i:02d}.png"
-            img.save(frame_path)
+            
+            if urls:
+                # Скачиваем первое изображение
+                success = self.searcher.download_image(urls[0], frame_path)
+                if not success:
+                    # Если скачать не удалось, создаём заглушку
+                    img = self.searcher.create_fallback_image(i + int(script['scp_number']))
+                    img.save(frame_path)
+            else:
+                # Если поиск не дал результатов, создаём заглушку
+                img = self.searcher.create_fallback_image(i + int(script['scp_number']))
+                img.save(frame_path)
+            
             frames.append({'path': frame_path, 'duration': scene.get('duration', 7)})
         
         return frames
@@ -196,11 +252,11 @@ class VideoGenerator:
                 clips.append(clip)
             except Exception as e:
                 st.warning(f"Ошибка клипа: {e}")
-                clip = ColorClip(size=(720, 1280), color=(20, 20, 30), duration=frame_data['duration'])
+                clip = ColorClip(size=(720, 1280), color=(240, 235, 225), duration=frame_data['duration'])
                 clips.append(clip)
         
         if not clips:
-            clip = ColorClip(size=(720, 1280), color=(20, 20, 30), duration=10)
+            clip = ColorClip(size=(720, 1280), color=(240, 235, 225), duration=10)
             clips.append(clip)
         
         final = concatenate_videoclips(clips, method="compose")
@@ -244,9 +300,9 @@ class VideoGenerator:
 
 # ==================== ОСНОВНОЙ БОТ ====================
 class SCPBot:
-    def __init__(self, api: ReplicateGenerator):
+    def __init__(self, searcher: ImageSearcher):
         self.script_gen = ScriptGenerator()
-        self.image_gen = ImageGenerator(api)
+        self.image_gen = ImageGenerator(searcher)
         self.voice_gen = VoiceGenerator()
         self.video_gen = VideoGenerator()
         self.videos_created = []
@@ -264,7 +320,7 @@ class SCPBot:
             try:
                 self._add_status("✍️ Сценарий...")
                 script = self.script_gen.generate_script(scp)
-                self._add_status("🎨 Генерация через Replicate API...")
+                self._add_status("🔍 Поиск изображений в интернете...")
                 frames = self.image_gen.generate_frames(script)
                 self._add_status(f"   ✅ {len(frames)} кадров")
                 self._add_status("🎤 Озвучка...")
@@ -300,27 +356,25 @@ class SCPBot:
 
 # ==================== STREAMLIT UI ====================
 def main():
-    st.set_page_config(page_title="SCP Video Bot (Replicate)", page_icon="🎨", layout="wide")
-    st.title("🎨 SCP Video Bot + Replicate API")
-    st.markdown("Создаёт видео с рисунками через нейросеть (без установки!)")
+    st.set_page_config(page_title="SCP Video Bot (Internet Search)", page_icon="🌐", layout="wide")
+    st.title("🌐 SCP Video Bot — поиск кадров в интернете")
+    st.markdown("Автоматически ищет изображения по сценарию и собирает видео")
     st.markdown("---")
     
-    # Проверка токена
-    if CONFIG['replicate_token'] == 'r8_ваш_токен':
-        st.warning("⚠️ Вставьте свой токен Replicate в файл `app.py` (строка `replicate_token`)")
-        st.markdown("1. Зарегистрируйтесь на [replicate.com](https://replicate.com)")
-        st.markdown("2. Получите API-токен в настройках")
-        st.markdown("3. Замените `r8_ваш_токен` в коде")
-        return
-    
-    api = ReplicateGenerator(CONFIG['replicate_token'], CONFIG['replicate_model'])
+    # Инициализируем поисковик
+    searcher = ImageSearcher(CONFIG['unsplash_key'])
     
     with st.sidebar:
         st.header("⚙️ Настройки")
         count = st.number_input("Количество видео:", min_value=1, max_value=3, value=1)
         st.markdown("---")
-        st.info("🎨 Модель: Stable Diffusion (Replicate)")
-        st.info("⏱️ ~10-20 секунд на кадр")
+        st.info("🔍 Поиск через Unsplash (бесплатно)")
+        if CONFIG['unsplash_key']:
+            st.success("✅ Ключ установлен (5000 запросов/час)")
+        else:
+            st.warning("⚠️ Без ключа — 50 запросов/час")
+            st.markdown("Получите бесплатный ключ на [unsplash.com](https://unsplash.com/developers)")
+        st.info("⏱️ ~1-2 минуты на видео")
         st.markdown("---")
         if st.button("🗑️ Очистить временные файлы"):
             shutil.rmtree(CONFIG['temp_dir'], ignore_errors=True)
@@ -332,9 +386,9 @@ def main():
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🎨 Сгенерировать видео", type="primary", use_container_width=True):
-            with st.spinner("Генерация видео..."):
-                bot = SCPBot(api)
+        if st.button("🌐 Сгенерировать видео", type="primary", use_container_width=True):
+            with st.spinner("Поиск и сборка видео..."):
+                bot = SCPBot(searcher)
                 videos = bot.run(count=count)
                 st.subheader("📊 Лог работы")
                 for msg in bot.status_messages:
